@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"image/color"
+	"slices"
 	"unicode/utf8"
 	"unsafe"
 
@@ -75,6 +76,10 @@ func main() {
 			if isKeyPressedOrRepeated(rl.KeyDown) {
 				focusedPaneIndex = min(focusedPaneIndex+1, len(panes))
 			}
+
+			if isKeyPressedOrRepeated(rl.KeyW) && focusedPaneIndex < len(panes) {
+				panes = slices.Delete(panes, focusedPaneIndex, focusedPaneIndex+1)
+			}
 		}
 
 		if focusedPaneIndex >= len(panes) {
@@ -126,6 +131,14 @@ func main() {
 
 			if isKeyPressedOrRepeated(rl.KeyBackspace) {
 				writeRuneToPty(&pane.pty, ptyInputBuffer, '\x7f')
+			}
+
+			if isKeyPressedOrRepeated(rl.KeyEnter) {
+				writeRuneToPty(&pane.pty, ptyInputBuffer, '\r')
+			}
+
+			if isKeyPressedOrRepeated(rl.KeyEscape) {
+				writeRuneToPty(&pane.pty, ptyInputBuffer, '\x1b')
 			}
 		}
 
@@ -185,7 +198,7 @@ func main() {
 				for y := range emulator.usedHeight {
 					lineStartIndex := y * emulatorCols
 					lineEndIndex := lineStartIndex + emulatorCols
-					line := emulator.grid[lineStartIndex:lineEndIndex]
+					line := emulator.grid.runes[lineStartIndex:lineEndIndex]
 					lineY := glyphSize.Y*float32(y) + paneY
 
 					rl.DrawTextCodepoints(font, line, rl.NewVector2(0, lineY), scaledFontSize, 0, rl.Black)

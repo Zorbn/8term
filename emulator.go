@@ -7,28 +7,46 @@ import (
 	"github.com/danielgatis/go-vte"
 )
 
+type grid struct {
+	runes []rune
+}
+
+func newGrid() grid {
+	runes := make([]rune, emulatorRows*emulatorCols)
+
+	for i := range len(runes) {
+		runes[i] = ' '
+	}
+
+	return grid{
+		runes,
+	}
+}
+
 const emulatorRows int = 24
 const emulatorCols int = 80
 
 type emulator struct {
-	grid             []rune
-	usedHeight       int
-	cursorX, cursorY int
+	grid                grid
+	otherGrid           grid
+	usedHeight          int
+	isInAlternateBuffer bool
+	cursorX, cursorY    int
 }
 
 func newEmulator() emulator {
-	grid := make([]rune, emulatorRows*emulatorCols)
-
-	for i := range len(grid) {
-		grid[i] = ' '
-	}
+	grid := newGrid()
+	otherGrid := newGrid()
 
 	usedHeight := 1
+	isInAlternateBuffer := false
 	cursorX, cursorY := 0, 0
 
 	return emulator{
 		grid,
+		otherGrid,
 		usedHeight,
+		isInAlternateBuffer,
 		cursorX,
 		cursorY,
 	}
@@ -45,9 +63,17 @@ func (e *emulator) writeRune(r rune) {
 		e.cursorY--
 	}
 
-	e.grid[e.cursorY*emulatorCols+e.cursorX] = r
+	if r == '~' {
+		fmt.Println("x, y", e.cursorX, e.cursorY)
+	}
+
+	e.setRune(r, e.cursorX, e.cursorY)
 	e.cursorX++
 	e.usedHeight = max(e.usedHeight, e.cursorY+1)
+}
+
+func (e *emulator) setRune(r rune, x int, y int) {
+	e.grid.runes[y*emulatorCols+x] = r
 }
 
 func (e *emulator) newlineCursor() {
@@ -60,7 +86,7 @@ func (e *emulator) newlineCursor() {
 }
 
 func (e *emulator) scrollContentUp() {
-	copy(e.grid[0:], e.grid[emulatorCols:])
+	copy(e.grid.runes[0:], e.grid.runes[emulatorCols:])
 }
 
 func (e *emulator) Print(r rune) {
@@ -118,6 +144,65 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 	switch r {
 	case 'm':
 		// We'll handle formatting later.
+	case 'l':
+		for i := range params {
+			param := getParam(params, i, 0)
+
+			switch param {
+			case 1047, 1049:
+				if e.isInAlternateBuffer {
+					e.isInAlternateBuffer = false
+					e.grid, e.otherGrid = e.otherGrid, e.grid
+				}
+			}
+		}
+	case 'h':
+		for i := range params {
+			param := getParam(params, i, 0)
+
+			switch param {
+			case 1047, 1049:
+				if !e.isInAlternateBuffer {
+					e.isInAlternateBuffer = true
+					e.grid, e.otherGrid = e.otherGrid, e.grid
+				}
+			}
+		}
+	case 'H':
+		e.cursorY = getRowsParam(params, 0, 1)
+		e.cursorX = getColsParam(params, 1, 1)
+	case 'K':
+		startX := 0
+		endX := emulatorCols
+
+		switch getParam(params, 0, 0) {
+		case 0:
+			startX = e.cursorX
+		case 1:
+			endX = e.cursorX
+		}
+
+		for x := startX; x < endX; x++ {
+			e.setRune(' ', x, e.cursorY)
+		}
+	case 'J':
+		startIndex := 0
+		endIndex := emulatorRows * emulatorCols
+		cursorIndex := e.cursorY*emulatorCols + e.cursorX
+
+		switch getParam(params, 0, 0) {
+		case 0:
+			startIndex = cursorIndex
+		case 1:
+			endIndex = cursorIndex
+		case 3:
+			// Clear scrollback lines.
+			return
+		}
+
+		for i := startIndex; i < endIndex; i++ {
+			e.grid.runes[i] = ' '
+		}
 	default:
 		if isDebug {
 			log.Printf("Unhandled CSI params=%v, intermediates=%v, ignore=%v, r=%c\n", params, intermediates, ignore, r)
@@ -136,4 +221,24 @@ func (e *emulator) SosPmApcDispatch(kind vte.SosPmApcKind, data []byte, bellTerm
 		kindName := []string{"SOS", "PM", "APC"}[kind]
 		fmt.Printf("[SosPmApcDispatch] kind=%s, data=%q, bellTerminated=%v\n", kindName, data, bellTerminated)
 	}
+}
+
+func getRowsParam(params [][]uint16, index int, def int) int {
+	rawValue := getParam(params, index, def)
+
+	return min(max(rawValue, 1), emulatorRows) - 1
+}
+
+func getColsParam(params [][]uint16, index int, def int) int {
+	rawValue := getParam(params, index, def)
+
+	return min(max(rawValue, 1), emulatorCols) - 1
+}
+
+func getParam(params [][]uint16, index int, def int) int {
+	if index >= len(params) || len(params[index]) < 1 {
+		return def
+	}
+
+	return int(params[index][0])
 }

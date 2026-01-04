@@ -14,9 +14,8 @@ type pty struct {
 
 func newPty(name string, arg ...string) pty {
 	cmd := exec.Command(name, arg...)
-	tty, err := cpty.Start(cmd)
 
-	cpty.Setsize(tty, &cpty.Winsize{
+	tty, err := cpty.StartWithSize(cmd, &cpty.Winsize{
 		Rows: uint16(emulatorRows),
 		Cols: uint16(emulatorCols),
 	})
