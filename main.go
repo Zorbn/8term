@@ -2,16 +2,16 @@ package main
 
 import (
 	_ "embed"
-	"io"
-	"log"
-	"os"
-	"os/exec"
+	"flag"
+	"fmt"
+	"image/color"
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/creack/pty"
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
+
+var isDebug bool
 
 //go:embed Inconsolata-Regular.ttf
 var fontData []byte
@@ -20,18 +20,22 @@ var fontData []byte
 var fragmentShaderCode string
 
 func main() {
-	log.Println("Hello, world!")
+	isDebugFlag := flag.Bool("debug", false, "Enable debugging mode")
+	flag.Parse()
+	isDebug = *isDebugFlag
 
-	rl.SetConfigFlags(rl.FlagWindowHighdpi | rl.FlagMsaa4xHint | rl.FlagVsyncHint | rl.FlagWindowResizable)
+	fmt.Println("Hello, world!", isDebug)
+
+	rl.SetConfigFlags(rl.FlagWindowHighdpi | rl.FlagMsaa4xHint | rl.FlagWindowResizable)
 
 	const screenWidth, screenHeight = 800, 450
-	rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - Sdf fonts")
+	rl.InitWindow(screenWidth, screenHeight, "8term")
 	defer rl.CloseWindow()
 
-	const msg = "Signed Distance Fields"
+	rl.SetExitKey(rl.KeyNull)
 
-	fontResolution := rl.GetWindowScaleDPI().X
-	fontSize := int32(16.0 * fontResolution)
+	dpi := rl.GetWindowScaleDPI().X
+	fontSize := int32(16 * dpi)
 
 	font := rl.Font{BaseSize: fontSize, CharsCount: 95}
 	defer rl.UnloadFont(font)
@@ -47,39 +51,153 @@ func main() {
 	defer rl.UnloadShader(shader)
 	rl.SetTextureFilter(font.Texture, rl.FilterBilinear)
 
-	scaledFontSize := float32(fontSize) / fontResolution
+	scaledFontSize := float32(fontSize) / dpi
 	glyphSize := rl.MeasureTextEx(font, "M", scaledFontSize, 0)
 
-	var panes []*Pane
+	var cameraY float32 = 0
+	// var cameraSpeed float32 = 10
+	cameraMargin := glyphSize.Y * 3
+
+	var panes []*pane
+	var command []rune
+	focusedPaneIndex := 0
+	var ptyInputBuffer [4]byte
+
+	rl.SetTargetFPS(144)
 
 	for !rl.WindowShouldClose() {
 		// Update:
-		if rl.IsKeyPressed(rl.KeyP) {
-			pane := newPane("git", "status")
-			pane.run()
+		if rl.IsKeyDown(rl.KeyLeftSuper) || rl.IsKeyDown(rl.KeyRightSuper) {
+			if isKeyPressedOrRepeated(rl.KeyUp) {
+				focusedPaneIndex = max(focusedPaneIndex-1, 0)
+			}
 
-			panes = append(panes, &pane)
+			if isKeyPressedOrRepeated(rl.KeyDown) {
+				focusedPaneIndex = min(focusedPaneIndex+1, len(panes))
+			}
 		}
+
+		if focusedPaneIndex >= len(panes) {
+			// Send input to command:
+			for {
+				r := rune(rl.GetCharPressed())
+
+				if r == 0 {
+					break
+				}
+
+				command = append(command, r)
+			}
+
+			// TODO:
+			// Should actually use GetKeyPressed in a loop to get pressed keys then check each frame if pressed keys have been released.
+			// Then we would need our own repeat timer logic.
+
+			if isKeyPressedOrRepeated(rl.KeyBackspace) {
+				if len(command) > 0 {
+					command = command[:len(command)-1]
+				}
+			}
+
+			if isKeyPressedOrRepeated(rl.KeyEnter) {
+				if len(command) > 0 {
+					pane := newPane("bash", "-c", string(command))
+					pane.run()
+
+					command = nil
+
+					panes = append(panes, &pane)
+					focusedPaneIndex++
+				}
+			}
+		} else {
+			// Send input to pane:
+			pane := panes[focusedPaneIndex]
+
+			for {
+				r := rune(rl.GetCharPressed())
+
+				if r == 0 {
+					break
+				}
+
+				writeRuneToPty(&pane.pty, ptyInputBuffer, r)
+			}
+
+			if isKeyPressedOrRepeated(rl.KeyBackspace) {
+				writeRuneToPty(&pane.pty, ptyInputBuffer, '\x7f')
+			}
+		}
+
+		var paneY float32 = 0
+
+		for i, pane := range panes {
+			pane.handleOutput()
+
+			if i < focusedPaneIndex {
+				paneY += glyphSize.Y * float32(pane.emulator.usedHeight+1)
+			}
+		}
+
+		// dt := rl.GetFrameTime()
+		windowHeight := float32(rl.GetRenderHeight()) / dpi
+
+		// cameraY = rl.Lerp(cameraY, paneY-windowHeight+cameraMargin, dt*cameraSpeed)
+		focusedPaneHeight := glyphSize.Y
+
+		if focusedPaneIndex < len(panes) {
+			focusedPaneHeight = glyphSize.Y * float32(panes[focusedPaneIndex].emulator.usedHeight)
+		}
+
+		cameraY = paneY - windowHeight + focusedPaneHeight + cameraMargin
 
 		// Draw:
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.RayWhite)
+		rl.Translatef(0, -cameraY, 0)
+
+		paneWidth := glyphSize.X * float32(emulatorCols)
+		paneY = 0
+
+		for i, pane := range panes {
+			emulator := &pane.emulator
+
+			paneHeight := glyphSize.Y * float32(emulator.usedHeight)
+
+			if paneY+paneHeight > cameraY {
+				color := getPaneColor(i, focusedPaneIndex)
+				rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, paneHeight), color)
+			}
+
+			paneY += glyphSize.Y * float32(emulator.usedHeight+1)
+		}
 
 		rl.BeginShaderMode(shader)
 
-		paneY := 0
+		paneY = 0
 
 		for _, pane := range panes {
-			for y := range pane.usedHeight {
-				lineStartIndex := y * paneCols
-				lineEndIndex := lineStartIndex + paneCols
-				lineY := glyphSize.Y * float32(y+paneY)
+			emulator := &pane.emulator
 
-				rl.DrawTextCodepoints(font, pane.grid[lineStartIndex:lineEndIndex], rl.NewVector2(0.0, lineY), scaledFontSize, 0.0, rl.Black)
+			paneHeight := glyphSize.Y * float32(emulator.usedHeight)
+
+			if paneY+paneHeight > cameraY {
+				for y := range emulator.usedHeight {
+					lineStartIndex := y * emulatorCols
+					lineEndIndex := lineStartIndex + emulatorCols
+					line := emulator.grid[lineStartIndex:lineEndIndex]
+					lineY := glyphSize.Y*float32(y) + paneY
+
+					rl.DrawTextCodepoints(font, line, rl.NewVector2(0, lineY), scaledFontSize, 0, rl.Black)
+				}
 			}
 
-			paneY += pane.usedHeight
+			paneY += glyphSize.Y * float32(emulator.usedHeight+1)
 		}
+
+		color := getPaneColor(len(panes), focusedPaneIndex)
+		rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), color)
+		rl.DrawTextCodepoints(font, command, rl.NewVector2(0, paneY), scaledFontSize, 0, rl.Black)
 
 		rl.EndShaderMode()
 
@@ -88,137 +206,19 @@ func main() {
 	}
 }
 
-const paneRows int = 24
-const paneCols int = 80
-
-type Pane struct {
-	pty              Pty
-	buffer           []byte
-	grid             []rune
-	usedHeight       int
-	cursorX, cursorY int
+func writeRuneToPty(pty *pty, buffer [4]byte, r rune) {
+	size := utf8.EncodeRune(buffer[:], r)
+	pty.write(buffer[:size])
 }
 
-func newPane(name string, arg ...string) Pane {
-	pty := newPty(name, arg...)
-
-	buffer := make([]byte, 4096)
-	grid := make([]rune, paneRows*paneCols)
-
-	for i := range len(grid) {
-		grid[i] = ' '
-	}
-
-	usedHeight := 1
-	cursorX, cursorY := 0, 0
-
-	return Pane{
-		pty,
-		buffer,
-		grid,
-		usedHeight,
-		cursorX,
-		cursorY,
+func getPaneColor(index, focusedIndex int) color.RGBA {
+	if index == focusedIndex {
+		return rl.SkyBlue
+	} else {
+		return rl.LightGray
 	}
 }
 
-func (p *Pane) run() {
-	go func() {
-		for {
-			outputLen, err := p.pty.read(p.buffer)
-
-			if err == io.EOF {
-				break
-			} else if err != nil {
-				log.Fatal(err)
-			}
-
-			output := p.buffer[:outputLen]
-
-			p.handleOutput(output)
-		}
-
-		p.pty.tty.Close()
-	}()
-}
-
-func (p *Pane) handleOutput(output []byte) {
-	for i := 0; i < len(output); {
-		r, size := utf8.DecodeRune(output[i:])
-
-		if r == utf8.RuneError {
-			r = '?'
-		}
-
-		i += size
-
-		p.writeRune(r)
-	}
-}
-
-func (p *Pane) writeRune(r rune) {
-	if r == '\n' {
-		p.newlineCursor()
-		return
-	}
-
-	if p.cursorX >= paneCols {
-		p.cursorX = 0
-		p.cursorY++
-	}
-
-	if p.cursorY >= paneRows {
-		p.scrollContentUp()
-		p.cursorY--
-	}
-
-	p.grid[p.cursorY*paneCols+p.cursorX] = r
-	p.cursorX++
-	p.usedHeight = max(p.usedHeight, p.cursorY+1)
-}
-
-func (p *Pane) newlineCursor() {
-	p.cursorX = 0
-	p.cursorY++
-
-	if p.cursorY >= paneRows {
-		p.scrollContentUp()
-		p.cursorY--
-	}
-}
-
-func (p *Pane) scrollContentUp() {
-	copy(p.grid[0:], p.grid[paneCols:])
-}
-
-type Pty struct {
-	cmd *exec.Cmd
-	tty *os.File
-}
-
-func newPty(name string, arg ...string) Pty {
-	cmd := exec.Command(name, arg...)
-	tty, err := pty.Start(cmd)
-
-	pty.Setsize(tty, &pty.Winsize{
-		Rows: uint16(paneRows),
-		Cols: uint16(paneCols),
-	})
-
-	if err != nil {
-		panic(err)
-	}
-
-	return Pty{
-		cmd,
-		tty,
-	}
-}
-
-func (p *Pty) write(input []byte) {
-	p.tty.Write(input)
-}
-
-func (p *Pty) read(output []byte) (int, error) {
-	return p.tty.Read(output)
+func isKeyPressedOrRepeated(key int32) bool {
+	return rl.IsKeyPressed(key) || rl.IsKeyPressedRepeat(key)
 }
