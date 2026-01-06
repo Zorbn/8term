@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"image/color"
+	"os"
 	"slices"
 	"unicode/utf8"
 	"unsafe"
@@ -64,6 +65,9 @@ func main() {
 	focusedPaneIndex := 0
 	var ptyInputBuffer [4]byte
 
+	os.Setenv("TERM", "xterm-256color")
+	os.Setenv("COLORTERM", "truecolor")
+
 	rl.SetTargetFPS(144)
 
 	for !rl.WindowShouldClose() {
@@ -106,6 +110,7 @@ func main() {
 
 			if isKeyPressedOrRepeated(rl.KeyEnter) {
 				if len(command) > 0 {
+					// TODO: This program should be its own shell.
 					pane := newPane("bash", "-c", string(command))
 					pane.run()
 
@@ -131,6 +136,10 @@ func main() {
 
 			if isKeyPressedOrRepeated(rl.KeyBackspace) {
 				writeRuneToPty(&pane.pty, ptyInputBuffer, '\x7f')
+			}
+
+			if isKeyPressedOrRepeated(rl.KeyTab) {
+				writeRuneToPty(&pane.pty, ptyInputBuffer, '\t')
 			}
 
 			if isKeyPressedOrRepeated(rl.KeyEnter) {
