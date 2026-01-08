@@ -13,8 +13,13 @@ type pane struct {
 	emulator emulator
 }
 
-func newPane(name string, arg ...string) pane {
-	pty := newPty(name, arg...)
+func newPane(name string, arg ...string) (pane, error) {
+	pty, err := newPty(name, arg...)
+
+	if err != nil {
+		return pane{}, err
+	}
+
 	buffer := make([]byte, 4096)
 	output := make(chan []byte)
 	emulator := newEmulator()
@@ -24,7 +29,7 @@ func newPane(name string, arg ...string) pane {
 		buffer,
 		output,
 		emulator,
-	}
+	}, nil
 }
 
 func (p *pane) run() {

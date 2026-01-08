@@ -74,10 +74,15 @@ func main() {
 		homeDir = ""
 	}
 
-	rl.SetTargetFPS(144)
+	var errorFlashTimer float32
+
+	// rl.SetTargetFPS(144)
 
 	for !rl.WindowShouldClose() {
 		// Update:
+		dt := rl.GetFrameTime()
+		errorFlashTimer -= dt
+
 		if rl.IsKeyDown(rl.KeyLeftSuper) || rl.IsKeyDown(rl.KeyRightSuper) {
 			if isKeyPressedOrRepeated(rl.KeyUp) {
 				focusedPaneIndex = max(focusedPaneIndex-1, 0)
@@ -115,34 +120,10 @@ func main() {
 			}
 
 			if isKeyPressedOrRepeated(rl.KeyEnter) {
-				tokens := tokenize(command)
-				var stringTokens []string
-
-				for _, t := range tokens {
-					stringTokens = append(stringTokens, string(t))
-				}
-
-				if len(tokens) > 0 {
-					switch stringTokens[0] {
-					case "cd":
-						// TODO: Handle wrong number of args.
-						path := homeDir
-
-						if len(stringTokens) > 1 {
-							path = stringTokens[1]
-						}
-
-						os.Chdir(path)
-					default:
-						// TODO: Handle error when stringTokens[0] isn't in path.
-						pane := newPane(stringTokens[0], stringTokens[1:]...)
-						pane.run()
-
-						panes = append(panes, &pane)
-						focusedPaneIndex++
-					}
-
+				if runCommand(command, &panes, &focusedPaneIndex, homeDir) {
 					command = nil
+				} else {
+					errorFlashTimer = 1
 				}
 			}
 		} else {
@@ -186,9 +167,7 @@ func main() {
 			}
 		}
 
-		dt := rl.GetFrameTime()
 		windowHeight := float32(rl.GetRenderHeight()) / dpi
-
 		focusedPaneHeight := glyphSize.Y
 
 		if focusedPaneIndex < len(panes) {
@@ -244,6 +223,14 @@ func main() {
 
 		color := getPaneColor(len(panes), focusedPaneIndex)
 		rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), color)
+
+		if errorFlashTimer > 0 {
+			errorColor := rl.Red
+			errorColor.A = uint8(errorFlashTimer * 255)
+
+			rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), errorColor)
+		}
+
 		rl.DrawTextCodepoints(font, command, rl.NewVector2(0, paneY), scaledFontSize, 0, rl.Black)
 
 		rl.EndShaderMode()
@@ -251,6 +238,48 @@ func main() {
 		rl.EndDrawing()
 
 	}
+}
+
+func runCommand(command []rune, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
+	tokens := tokenize(command)
+	var stringTokens []string
+
+	for _, t := range tokens {
+		stringTokens = append(stringTokens, string(t))
+	}
+
+	if len(tokens) == 0 {
+		return false
+	}
+
+	switch stringTokens[0] {
+	case "cd":
+		if len(stringTokens) > 2 {
+			return false
+		}
+
+		path := homeDir
+
+		if len(stringTokens) > 1 {
+			path = stringTokens[1]
+		}
+
+		os.Chdir(path)
+	default:
+		// TODO: Handle error when stringTokens[0] isn't in path.
+		pane, err := newPane(stringTokens[0], stringTokens[1:]...)
+
+		if err != nil {
+			return false
+		}
+
+		pane.run()
+
+		*panes = append(*panes, &pane)
+		*focusedPaneIndex++
+	}
+
+	return true
 }
 
 func writeRuneToPty(pty *pty, buffer [4]byte, r rune) {

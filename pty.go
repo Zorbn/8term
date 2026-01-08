@@ -12,7 +12,7 @@ type pty struct {
 	tty *os.File
 }
 
-func newPty(name string, arg ...string) pty {
+func newPty(name string, arg ...string) (pty, error) {
 	cmd := exec.Command(name, arg...)
 
 	tty, err := cpty.StartWithSize(cmd, &cpty.Winsize{
@@ -21,13 +21,13 @@ func newPty(name string, arg ...string) pty {
 	})
 
 	if err != nil {
-		panic(err)
+		return pty{}, err
 	}
 
 	return pty{
 		cmd,
 		tty,
-	}
+	}, nil
 }
 
 func (p *pty) write(input []byte) {
