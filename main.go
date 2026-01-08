@@ -57,7 +57,7 @@ func main() {
 	glyphSize := rl.MeasureTextEx(font, "M", scaledFontSize, 0)
 
 	var cameraY float32 = 0
-	// var cameraSpeed float32 = 10
+	var cameraSpeed float32 = 10
 	cameraMargin := glyphSize.Y * 3
 
 	var panes []*pane
@@ -67,6 +67,12 @@ func main() {
 
 	os.Setenv("TERM", "xterm-256color")
 	os.Setenv("COLORTERM", "truecolor")
+
+	homeDir, err := os.UserHomeDir()
+
+	if err != nil {
+		homeDir = ""
+	}
 
 	rl.SetTargetFPS(144)
 
@@ -109,15 +115,34 @@ func main() {
 			}
 
 			if isKeyPressedOrRepeated(rl.KeyEnter) {
-				if len(command) > 0 {
-					// TODO: This program should be its own shell.
-					pane := newPane("bash", "-c", string(command))
-					pane.run()
+				tokens := tokenize(command)
+				var stringTokens []string
+
+				for _, t := range tokens {
+					stringTokens = append(stringTokens, string(t))
+				}
+
+				if len(tokens) > 0 {
+					switch stringTokens[0] {
+					case "cd":
+						// TODO: Handle wrong number of args.
+						path := homeDir
+
+						if len(stringTokens) > 1 {
+							path = stringTokens[1]
+						}
+
+						os.Chdir(path)
+					default:
+						// TODO: Handle error when stringTokens[0] isn't in path.
+						pane := newPane(stringTokens[0], stringTokens[1:]...)
+						pane.run()
+
+						panes = append(panes, &pane)
+						focusedPaneIndex++
+					}
 
 					command = nil
-
-					panes = append(panes, &pane)
-					focusedPaneIndex++
 				}
 			}
 		} else {
@@ -161,17 +186,17 @@ func main() {
 			}
 		}
 
-		// dt := rl.GetFrameTime()
+		dt := rl.GetFrameTime()
 		windowHeight := float32(rl.GetRenderHeight()) / dpi
 
-		// cameraY = rl.Lerp(cameraY, paneY-windowHeight+cameraMargin, dt*cameraSpeed)
 		focusedPaneHeight := glyphSize.Y
 
 		if focusedPaneIndex < len(panes) {
 			focusedPaneHeight = glyphSize.Y * float32(panes[focusedPaneIndex].emulator.usedHeight)
 		}
 
-		cameraY = paneY - windowHeight + focusedPaneHeight + cameraMargin
+		cameraY = rl.Lerp(cameraY, paneY-windowHeight+focusedPaneHeight+cameraMargin, dt*cameraSpeed)
+		// cameraY = paneY - windowHeight + focusedPaneHeight + cameraMargin
 
 		// Draw:
 		rl.BeginDrawing()

@@ -272,7 +272,7 @@ func parsePrefixedCSI(output []byte, performer Performer, prefix byte) []byte {
 func parseUnprefixedCSI(output []byte, performer Performer) []byte {
 	var params []int
 	params, output = parseNumericParameters(output)
-	if output == nil {
+	if len(output) == 0 {
 		return nil
 	}
 

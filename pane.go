@@ -38,6 +38,7 @@ func (p *pane) run() {
 				log.Fatal(err)
 			}
 
+			// TODO: Use sync pool to avoid excess allocations.
 			output := make([]byte, outputLen)
 			copy(output, p.buffer[:outputLen])
 

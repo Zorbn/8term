@@ -94,8 +94,9 @@ func (e *emulator) clampCursorY() {
 func (e *emulator) Plain(text []byte) {
 	for i := 0; i < len(text); {
 		r, size := utf8.DecodeRune(text[i:])
-		e.writeRune(r)
 		i += size
+
+		e.writeRune(r)
 	}
 }
 
