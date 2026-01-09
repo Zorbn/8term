@@ -8,6 +8,8 @@ require (
 )
 
 require (
+	github.com/danielgatis/go-utf8 v1.0.1 // indirect
+	github.com/danielgatis/go-vte v1.0.11 // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93 // indirect
 	golang.org/x/sys v0.39.0 // indirect

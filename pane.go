@@ -4,12 +4,15 @@ import (
 	_ "embed"
 	"io"
 	"log"
+
+	"github.com/danielgatis/go-vte"
 )
 
 type pane struct {
 	pty      pty
 	buffer   []byte
 	output   chan []byte
+	parser   *vte.Parser
 	emulator emulator
 }
 
@@ -23,11 +26,13 @@ func newPane(name string, arg ...string) (pane, error) {
 	buffer := make([]byte, 4096)
 	output := make(chan []byte)
 	emulator := newEmulator()
+	var parser *vte.Parser
 
 	return pane{
 		pty,
 		buffer,
 		output,
+		parser,
 		emulator,
 	}, nil
 }
@@ -55,9 +60,15 @@ func (p *pane) run() {
 }
 
 func (p *pane) handleOutput() {
+	if p.parser == nil {
+		p.parser = vte.NewParser(&p.emulator)
+	}
+
 	select {
 	case output := <-p.output:
-		ParseEscapeSequences(output, &p.emulator)
+		for _, b := range output {
+			p.parser.Advance(b)
+		}
 	default:
 	}
 
