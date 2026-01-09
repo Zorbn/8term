@@ -218,9 +218,14 @@ func main() {
 						i := y*emulatorCols + x
 						r := emulator.grid.runes[i]
 						foregroundColor := emulator.grid.foregroundColors[i]
-						// backgroundColor := emulator.grid.backgroundColors[i]
+						backgroundColor := emulator.grid.backgroundColors[i]
 
 						position := rl.NewVector2(glyphSize.X*float32(x), lineY)
+
+						// if backgroundColor != Background {
+						color := terminalColorToColor(backgroundColor)
+						rl.DrawRectangleV(position, glyphSize, color)
+						// }
 
 						if !unicode.IsSpace(r) {
 							color := terminalColorToColor(foregroundColor)
@@ -313,9 +318,7 @@ func isKeyPressedOrRepeated(key int32) bool {
 }
 
 func terminalColorToColor(color uint32) color.RGBA {
-	kind := (color >> 24) & 0xFF
-
-	switch kind {
+	switch color {
 	case Background:
 		return rl.Black
 	case Foreground:
