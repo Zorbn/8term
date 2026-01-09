@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"os"
 	"slices"
+	"unicode"
 	"unicode/utf8"
 	"unsafe"
 
@@ -209,12 +210,24 @@ func main() {
 
 			if paneY+paneHeight > cameraY {
 				for y := range emulator.usedHeight {
-					lineStartIndex := y * emulatorCols
-					lineEndIndex := lineStartIndex + emulatorCols
-					line := emulator.grid.runes[lineStartIndex:lineEndIndex]
 					lineY := glyphSize.Y*float32(y) + paneY
 
-					rl.DrawTextCodepoints(font, line, rl.NewVector2(0, lineY), scaledFontSize, 0, rl.Black)
+					// rl.DrawTextCodepoints(font, line, rl.NewVector2(0, lineY), scaledFontSize, 0, rl.Black)
+
+					for x := range emulatorCols {
+						i := y*emulatorCols + x
+						r := emulator.grid.runes[i]
+						foregroundColor := emulator.grid.foregroundColors[i]
+						// backgroundColor := emulator.grid.backgroundColors[i]
+
+						position := rl.NewVector2(glyphSize.X*float32(x), lineY)
+
+						if !unicode.IsSpace(r) {
+							color := terminalColorToColor(foregroundColor)
+
+							rl.DrawTextCodepoint(font, r, position, scaledFontSize, color)
+						}
+					}
 				}
 			}
 
@@ -297,4 +310,49 @@ func getPaneColor(index, focusedIndex int) color.RGBA {
 
 func isKeyPressedOrRepeated(key int32) bool {
 	return rl.IsKeyPressed(key) || rl.IsKeyPressedRepeat(key)
+}
+
+func terminalColorToColor(color uint32) color.RGBA {
+	kind := (color >> 24) & 0xFF
+
+	switch kind {
+	case Background:
+		return rl.Black
+	case Foreground:
+		return rl.White
+	case Red:
+		return rl.Red
+	case Green:
+		return rl.Green
+	case Yellow:
+		return rl.Yellow
+	case Blue:
+		return rl.Blue
+	case Magenta:
+		return rl.Magenta
+	case Cyan:
+		return rl.SkyBlue
+	case BrightBackground:
+		return rl.Black
+	case BrightForeground:
+		return rl.White
+	case BrightRed:
+		return rl.Red
+	case BrightGreen:
+		return rl.Green
+	case BrightYellow:
+		return rl.Yellow
+	case BrightBlue:
+		return rl.Blue
+	case BrightMagenta:
+		return rl.Magenta
+	case BrightCyan:
+		return rl.SkyBlue
+	default:
+		r := (color >> 16) & 0xFF
+		g := (color >> 8) & 0xFF
+		b := color & 0xFF
+
+		return rl.NewColor(uint8(r), uint8(g), uint8(b), 255)
+	}
 }

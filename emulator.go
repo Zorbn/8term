@@ -41,26 +41,28 @@ var colorTable = [256]uint32{
 }
 
 const (
-	Background       = 0x01000000
-	Foreground       = 0x02000000
-	Red              = 0x03000000
-	Green            = 0x04000000
-	Yellow           = 0x05000000
-	Blue             = 0x06000000
-	Magenta          = 0x07000000
-	Cyan             = 0x08000000
-	BrightBackground = 0x09000000
-	BrightForeground = 0x0A000000
-	BrightRed        = 0x0B000000
-	BrightGreen      = 0x0C000000
-	BrightYellow     = 0x0D000000
-	BrightBlue       = 0x0E000000
-	BrightMagenta    = 0x0F000000
-	BrightCyan       = 0x10000000
+	Background       uint32 = 0x01000000
+	Foreground       uint32 = 0x02000000
+	Red              uint32 = 0x03000000
+	Green            uint32 = 0x04000000
+	Yellow           uint32 = 0x05000000
+	Blue             uint32 = 0x06000000
+	Magenta          uint32 = 0x07000000
+	Cyan             uint32 = 0x08000000
+	BrightBackground uint32 = 0x09000000
+	BrightForeground uint32 = 0x0A000000
+	BrightRed        uint32 = 0x0B000000
+	BrightGreen      uint32 = 0x0C000000
+	BrightYellow     uint32 = 0x0D000000
+	BrightBlue       uint32 = 0x0E000000
+	BrightMagenta    uint32 = 0x0F000000
+	BrightCyan       uint32 = 0x10000000
 )
 
 type grid struct {
-	runes []rune
+	runes            []rune
+	foregroundColors []uint32
+	backgroundColors []uint32
 }
 
 func newGrid() grid {
@@ -70,8 +72,13 @@ func newGrid() grid {
 		runes[i] = ' '
 	}
 
+	foregroundColors := make([]uint32, emulatorRows*emulatorCols)
+	backgroundColors := make([]uint32, emulatorRows*emulatorCols)
+
 	return grid{
 		runes,
+		foregroundColors,
+		backgroundColors,
 	}
 }
 
@@ -79,12 +86,14 @@ const emulatorRows int = 24
 const emulatorCols int = 80
 
 type emulator struct {
-	grid                grid
-	otherGrid           grid
-	usedHeight          int
-	isInAlternateBuffer bool
-	cursorX, cursorY    int
-	input               bytes.Buffer
+	grid                              grid
+	otherGrid                         grid
+	usedHeight                        int
+	isInAlternateBuffer               bool
+	cursorX, cursorY                  int
+	foregroundColor, backgroundColor  uint32
+	areColorsBright, areColorsSwapped bool
+	input                             bytes.Buffer
 }
 
 func newEmulator() emulator {
@@ -94,6 +103,8 @@ func newEmulator() emulator {
 	usedHeight := 1
 	isInAlternateBuffer := false
 	cursorX, cursorY := 0, 0
+	foregroundColor, backgroundColor := Foreground, Background
+	areColorsBright, areColorsSwapped := false, false
 
 	var input bytes.Buffer
 
@@ -102,8 +113,9 @@ func newEmulator() emulator {
 		otherGrid,
 		usedHeight,
 		isInAlternateBuffer,
-		cursorX,
-		cursorY,
+		cursorX, cursorY,
+		foregroundColor, backgroundColor,
+		areColorsBright, areColorsSwapped,
 		input,
 	}
 }
@@ -120,7 +132,11 @@ func (e *emulator) writeRune(r rune) {
 }
 
 func (e *emulator) setRune(r rune, x int, y int) {
-	e.grid.runes[y*emulatorCols+x] = r
+	index := y*emulatorCols + x
+
+	e.grid.runes[index] = r
+	e.grid.foregroundColors[index] = e.foregroundColor
+	e.grid.backgroundColors[index] = e.backgroundColor
 }
 
 func (e *emulator) newlineCursor() {
@@ -203,7 +219,7 @@ func (e *emulator) OscDispatch(params [][]byte, bellTerminated bool) {
 func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore bool, r rune) {
 	switch r {
 	case 'm':
-		// We'll handle formatting later.
+		e.parseFormatting(params)
 	case 'l':
 		for i := range params {
 			param := getParam(params, i, 0)
@@ -305,237 +321,140 @@ func getParam(params [][]uint16, index int, def int) int {
 	return int(params[index][0])
 }
 
-// func (e *emulator) Plain(text []byte) {
-// 	for i := 0; i < len(text); {
-// 		r, size := utf8.DecodeRune(text[i:])
-// 		i += size
-
-// 		e.writeRune(r)
-// 	}
-// }
-
-// func (e *emulator) Backspace() {
-// 	e.cursorX--
-// 	e.clampCursorX()
-// }
-
-// func (e *emulator) Tab() {
-// 	nextTabStop := (e.cursorX/8 + 1) * 8
-
-// 	for e.cursorX < nextTabStop {
-// 		e.writeRune(' ')
-// 	}
-// }
-
-// func (e *emulator) CarriageReturn() {
-// 	e.cursorX = 0
-// }
-
-// func (e *emulator) Newline() {
-// 	e.newlineCursor()
-// }
-
-// func (e *emulator) ReverseNewline() {
-
-// }
-
-// func (e *emulator) HideCursor() {
-
-// }
-
-// func (e *emulator) ShowCursor() {
-
-// }
-
-// func (e *emulator) SwitchToNormalBuffer() {
-
-// }
-
-// func (e *emulator) SwitchToAlternateBuffer() {
-
-// }
-
-// func (e *emulator) QueryModifyKeyboard() {
-
-// }
-
-// func (e *emulator) QueryModifyCursorKeys() {
-
-// }
-
-// func (e *emulator) QueryModifyFunctionKeys() {
-
-// }
-
-// func (e *emulator) QueryModifyOtherKeys() {
-
-// }
-
-// func (e *emulator) QueryDeviceAttributes() {
-
-// }
-
-// func (e *emulator) ResetFormatting() {
-
-// }
-
-// func (e *emulator) SetColorsBright(bright bool) {
-
-// }
-
-// func (e *emulator) SetColorsSwapped(swapped bool) {
-
-// }
-
-// func (e *emulator) SetForegroundColor(color uint32) {
-
-// }
-
-// func (e *emulator) SetBackgroundColor(color uint32) {
-
-// }
-
-// func (e *emulator) SetCursorX(x int) {
-// 	e.cursorX = x
-// 	e.clampCursorX()
-// }
-
-// func (e *emulator) SetCursorY(y int) {
-// 	e.cursorY = y
-// 	e.clampCursorY()
-// }
-
-// func (e *emulator) SetCursorPosition(x, y int) {
-// 	e.cursorX = x
-// 	e.cursorY = y
-
-// 	e.clampCursorX()
-// 	e.clampCursorY()
-// }
-
-// func (e *emulator) MoveCursorX(delta int) {
-// 	e.cursorX += delta
-// 	e.clampCursorX()
-// }
-
-// func (e *emulator) MoveCursorY(delta int) {
-// 	e.cursorY += delta
-// 	e.clampCursorY()
-// }
-
-// func (e *emulator) MoveCursorYAndResetX(delta int) {
-// 	e.cursorY += delta
-// 	e.cursorX = 0
-
-// 	e.clampCursorY()
-// }
-
-// func (e *emulator) ClearToScreenEnd() {
-// 	startIndex := e.cursorY*emulatorCols + e.cursorX
-// 	endIndex := emulatorRows * emulatorCols
-
-// 	for i := startIndex; i < endIndex; i++ {
-// 		e.grid.runes[i] = ' '
-// 	}
-// }
-
-// func (e *emulator) ClearToScreenStart() {
-// 	startIndex := 0
-// 	endIndex := e.cursorY*emulatorCols + e.cursorX
-
-// 	for i := startIndex; i < endIndex; i++ {
-// 		e.grid.runes[i] = ' '
-// 	}
-// }
-
-// func (e *emulator) ClearScreen() {
-// 	startIndex := 0
-// 	endIndex := emulatorRows * emulatorCols
-
-// 	for i := startIndex; i < endIndex; i++ {
-// 		e.grid.runes[i] = ' '
-// 	}
-// }
-
-// func (e *emulator) ClearScrollbackLines() {
-
-// }
-
-// func (e *emulator) ClearToLineEnd() {
-// 	startX := e.cursorX
-// 	endX := emulatorCols
-
-// 	for x := startX; x < endX; x++ {
-// 		e.setRune(' ', x, e.cursorY)
-// 	}
-// }
-
-// func (e *emulator) ClearToLineStart() {
-// 	startX := 0
-// 	endX := e.cursorX
-
-// 	for x := startX; x < endX; x++ {
-// 		e.setRune(' ', x, e.cursorY)
-// 	}
-// }
-
-// func (e *emulator) ClearLine() {
-// 	startX := 0
-// 	endX := emulatorCols
-
-// 	for x := startX; x < endX; x++ {
-// 		e.setRune(' ', x, e.cursorY)
-// 	}
-// }
-
-// func (e *emulator) InsertLines(count int) {
-
-// }
-
-// func (e *emulator) DeleteLines(count int) {
-
-// }
-
-// func (e *emulator) ScrollUp(count int) {
-
-// }
-
-// func (e *emulator) ScrollDown(count int) {
-
-// }
-
-// func (e *emulator) ClearCharsAfterCursor(count int) {
-
-// }
-
-// func (e *emulator) DeleteCharsAfterCursor(count int) {
-
-// }
-
-// func (e *emulator) SetScrollRegion(top, bottom int) {
-
-// }
-
-// func (e *emulator) QueryDeviceStatus() {
-
-// }
-
-// func (e *emulator) QueryTerminalId() {
-
-// }
-
-// func (e *emulator) SetTitle(title []byte) {
-
-// }
-
-// func (e *emulator) ResetTitle() {
-
-// }
-
-// func (e *emulator) QueryForegroundColor() {
-
-// }
-
-// func (e *emulator) QueryBackgroundColor() {
-
-// }
+func (e *emulator) parseFormatting(params [][]uint16) {
+	if len(params) == 0 {
+		params = [][]uint16{{0}}
+	}
+
+	for i := 0; i < len(params); i++ {
+		param := getParam(params, i, 0)
+
+		switch param {
+		case 0:
+			e.areColorsBright = false
+			e.areColorsSwapped = false
+			e.foregroundColor = Foreground
+			e.backgroundColor = Background
+		case 1:
+			e.areColorsBright = true
+		case 7:
+			e.areColorsSwapped = true
+		case 22:
+			e.areColorsBright = false
+		case 27:
+			e.areColorsSwapped = false
+		case 30:
+			e.foregroundColor = Background
+		case 31:
+			e.foregroundColor = Red
+		case 32:
+			e.foregroundColor = Green
+		case 33:
+			e.foregroundColor = Yellow
+		case 34:
+			e.foregroundColor = Blue
+		case 35:
+			e.foregroundColor = Magenta
+		case 36:
+			e.foregroundColor = Cyan
+		case 37:
+			e.foregroundColor = Foreground
+		case 38:
+			if color, len := parseColorFromParameters(params, i); len != 0 {
+				e.foregroundColor = color
+				i += len
+			}
+		case 39:
+			e.foregroundColor = Foreground
+		case 40:
+			e.backgroundColor = Background
+		case 41:
+			e.backgroundColor = Red
+		case 42:
+			e.backgroundColor = Green
+		case 43:
+			e.backgroundColor = Yellow
+		case 44:
+			e.backgroundColor = Blue
+		case 45:
+			e.backgroundColor = Magenta
+		case 46:
+			e.backgroundColor = Cyan
+		case 47:
+			e.backgroundColor = Foreground
+		case 48:
+			if color, len := parseColorFromParameters(params, i); len != 0 {
+				e.backgroundColor = color
+				i += len
+			}
+		case 49:
+			e.backgroundColor = Background
+		case 90:
+			e.foregroundColor = BrightBackground
+		case 91:
+			e.foregroundColor = BrightRed
+		case 92:
+			e.foregroundColor = BrightGreen
+		case 93:
+			e.foregroundColor = BrightYellow
+		case 94:
+			e.foregroundColor = BrightBlue
+		case 95:
+			e.foregroundColor = BrightMagenta
+		case 96:
+			e.foregroundColor = BrightCyan
+		case 97:
+			e.foregroundColor = BrightForeground
+		case 100:
+			e.backgroundColor = BrightBackground
+		case 101:
+			e.backgroundColor = BrightRed
+		case 102:
+			e.backgroundColor = BrightGreen
+		case 103:
+			e.backgroundColor = BrightYellow
+		case 104:
+			e.backgroundColor = BrightBlue
+		case 105:
+			e.backgroundColor = BrightMagenta
+		case 106:
+			e.backgroundColor = BrightCyan
+		case 107:
+			e.backgroundColor = BrightForeground
+		}
+	}
+}
+
+func parseColorFromParameters(params [][]uint16, start int) (uint32, int) {
+	if start >= len(params) {
+		return 0, 0
+	}
+
+	kind := getParam(params, 0, 0)
+
+	switch kind {
+	case 2:
+		// RGB true color
+		if len(params) < 3 {
+			return 0, 0
+		}
+
+		r := getParam(params, 1, 0) & 0xFF
+		g := getParam(params, 2, 0) & 0xFF
+		b := getParam(params, 3, 0) & 0xFF
+
+		return uint32((r << 16) | (g << 8) | b), 3
+
+	case 5:
+		// 256 color table
+		if len(params) < 1 {
+			return 0, 0
+		}
+		index := getParam(params, 1, 0) & 0xFF
+
+		return colorTable[index], 1
+
+	default:
+		return 0, 0
+	}
+}
