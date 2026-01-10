@@ -56,6 +56,7 @@ func main() {
 
 	scaledFontSize := float32(fontSize) / dpi
 	glyphSize := rl.MeasureTextEx(font, "M", scaledFontSize, 0)
+	paneBorderWidth := glyphSize.X / 2
 
 	var cameraY float32 = 0
 	var cameraSpeed float32 = 10
@@ -168,7 +169,9 @@ func main() {
 			}
 		}
 
+		windowWidth := float32(rl.GetRenderWidth()) / dpi
 		windowHeight := float32(rl.GetRenderHeight()) / dpi
+
 		focusedPaneHeight := glyphSize.Y
 
 		if focusedPaneIndex < len(panes) {
@@ -176,12 +179,12 @@ func main() {
 		}
 
 		cameraY = rl.Lerp(cameraY, paneY-windowHeight+focusedPaneHeight+cameraMargin, dt*cameraSpeed)
-		// cameraY = paneY - windowHeight + focusedPaneHeight + cameraMargin
+		cameraX := (glyphSize.X*float32(emulatorCols) - windowWidth) / 2
 
 		// Draw:
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.RayWhite)
-		rl.Translatef(0, -cameraY, 0)
+		rl.Translatef(-cameraX, -cameraY, 0)
 
 		paneWidth := glyphSize.X * float32(emulatorCols)
 		paneY = 0
@@ -192,8 +195,8 @@ func main() {
 			paneHeight := glyphSize.Y * float32(emulator.usedHeight)
 
 			if paneY+paneHeight > cameraY {
-				color := getPaneColor(i, focusedPaneIndex)
-				rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, paneHeight), color)
+				borderColor := getPaneBorderColor(i, focusedPaneIndex)
+				drawBorderedRect(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, paneHeight), paneBorderWidth, borderColor, rl.Black)
 			}
 
 			paneY += glyphSize.Y * float32(emulator.usedHeight+1)
@@ -203,7 +206,7 @@ func main() {
 
 		paneY = 0
 
-		for _, pane := range panes {
+		for paneIndex, pane := range panes {
 			emulator := &pane.emulator
 
 			paneHeight := glyphSize.Y * float32(emulator.usedHeight)
@@ -211,8 +214,6 @@ func main() {
 			if paneY+paneHeight > cameraY {
 				for y := range emulator.usedHeight {
 					lineY := glyphSize.Y*float32(y) + paneY
-
-					// rl.DrawTextCodepoints(font, line, rl.NewVector2(0, lineY), scaledFontSize, 0, rl.Black)
 
 					for x := range emulatorCols {
 						i := y*emulatorCols + x
@@ -222,25 +223,32 @@ func main() {
 
 						position := rl.NewVector2(glyphSize.X*float32(x), lineY)
 
-						// if backgroundColor != Background {
-						color := terminalColorToColor(backgroundColor)
-						rl.DrawRectangleV(position, glyphSize, color)
-						// }
+						if backgroundColor != Background {
+							color := terminalColorToColor(backgroundColor)
+							rl.DrawRectangleV(position, glyphSize, color)
+						}
 
 						if !unicode.IsSpace(r) {
 							color := terminalColorToColor(foregroundColor)
-
 							rl.DrawTextCodepoint(font, r, position, scaledFontSize, color)
 						}
 					}
+				}
+
+				if paneIndex == focusedPaneIndex && emulator.cursorY < emulator.usedHeight {
+					r := emulator.grid.runes[emulator.cursorY*emulatorCols+emulator.cursorX]
+					position := rl.NewVector2(glyphSize.X*float32(emulator.cursorX), paneY+glyphSize.Y*float32(emulator.cursorY))
+
+					rl.DrawRectangleV(position, glyphSize, rl.White)
+					rl.DrawTextCodepoint(font, r, position, scaledFontSize, rl.Black)
 				}
 			}
 
 			paneY += glyphSize.Y * float32(emulator.usedHeight+1)
 		}
 
-		color := getPaneColor(len(panes), focusedPaneIndex)
-		rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), color)
+		borderColor := getPaneBorderColor(len(panes), focusedPaneIndex)
+		drawBorderedRect(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), paneBorderWidth, borderColor, rl.Black)
 
 		if errorFlashTimer > 0 {
 			errorColor := rl.Red
@@ -249,7 +257,13 @@ func main() {
 			rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), errorColor)
 		}
 
-		rl.DrawTextCodepoints(font, command, rl.NewVector2(0, paneY), scaledFontSize, 0, rl.Black)
+		rl.DrawTextCodepoints(font, command, rl.NewVector2(0, paneY), scaledFontSize, 0, rl.White)
+
+		if len(panes) == focusedPaneIndex {
+			position := rl.NewVector2(glyphSize.X*float32(len(command)), paneY)
+
+			rl.DrawRectangleV(position, glyphSize, rl.White)
+		}
 
 		rl.EndShaderMode()
 
@@ -284,7 +298,6 @@ func runCommand(command []rune, panes *[]*pane, focusedPaneIndex *int, homeDir s
 
 		os.Chdir(path)
 	default:
-		// TODO: Handle error when stringTokens[0] isn't in path.
 		pane, err := newPane(stringTokens[0], stringTokens[1:]...)
 
 		if err != nil {
@@ -305,7 +318,16 @@ func writeRuneToPty(pty *pty, buffer [4]byte, r rune) {
 	pty.write(buffer[:size])
 }
 
-func getPaneColor(index, focusedIndex int) color.RGBA {
+func drawBorderedRect(position, size rl.Vector2, borderWidth float32, borderColor, backgroundColor color.RGBA) {
+	borderOffset := rl.NewVector2(borderWidth, borderWidth)
+	borderPosition := rl.Vector2Subtract(position, borderOffset)
+	borderSize := rl.Vector2Add(size, rl.Vector2Scale(borderOffset, 2))
+
+	rl.DrawRectangleV(borderPosition, borderSize, borderColor)
+	rl.DrawRectangleV(position, size, backgroundColor)
+}
+
+func getPaneBorderColor(index, focusedIndex int) color.RGBA {
 	if index == focusedIndex {
 		return rl.SkyBlue
 	} else {
@@ -338,19 +360,19 @@ func terminalColorToColor(color uint32) color.RGBA {
 	case BrightBackground:
 		return rl.Black
 	case BrightForeground:
-		return rl.White
+		return brightenColor(rl.White)
 	case BrightRed:
-		return rl.Red
+		return brightenColor(rl.Red)
 	case BrightGreen:
-		return rl.Green
+		return brightenColor(rl.Green)
 	case BrightYellow:
-		return rl.Yellow
+		return brightenColor(rl.Yellow)
 	case BrightBlue:
-		return rl.Blue
+		return brightenColor(rl.Blue)
 	case BrightMagenta:
-		return rl.Magenta
+		return brightenColor(rl.Magenta)
 	case BrightCyan:
-		return rl.SkyBlue
+		return brightenColor(rl.SkyBlue)
 	default:
 		r := (color >> 16) & 0xFF
 		g := (color >> 8) & 0xFF
@@ -358,4 +380,8 @@ func terminalColorToColor(color uint32) color.RGBA {
 
 		return rl.NewColor(uint8(r), uint8(g), uint8(b), 255)
 	}
+}
+
+func brightenColor(color color.RGBA) color.RGBA {
+	return rl.NewColor((color.R+rl.White.R)/2, (color.G+rl.White.R)/2, (color.B+rl.White.R)/2, color.A)
 }
