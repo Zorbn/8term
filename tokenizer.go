@@ -54,14 +54,23 @@ func tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune, bo
 	for len(text) > 0 {
 		r, text = nextRune(text)
 
-		if !isEscaped && r == delimiter {
-			return t, text, true
+		if r == escape {
+			isEscaped = true
+			continue
 		}
 
-		isEscaped = r == escape
-
 		if isEscaped {
-			continue
+			if r == delimiter {
+				continue
+			}
+
+			t = append(t, escape)
+		}
+
+		isEscaped = false
+
+		if r == delimiter {
+			return t, text, true
 		}
 
 		t = append(t, r)
