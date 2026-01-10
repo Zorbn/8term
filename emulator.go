@@ -248,6 +248,20 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 				}
 			}
 		}
+	case 'A':
+		e.cursorY = max(e.cursorY-getParam(params, 0, 1), 0)
+	case 'B':
+		e.cursorY = min(e.cursorY+getParam(params, 0, 1), emulatorCols-1)
+	case 'C':
+		e.cursorX = min(e.cursorX+getParam(params, 0, 1), emulatorRows-1)
+	case 'D':
+		e.cursorX = max(e.cursorX-getParam(params, 0, 1), 0)
+	case 'E':
+		e.cursorY = min(e.cursorY+getParam(params, 0, 1), emulatorCols-1)
+		e.cursorX = 0
+	case 'F':
+		e.cursorY = max(e.cursorY-getParam(params, 0, 1), 0)
+		e.cursorX = 0
 	case 'H':
 		e.cursorY = getRowsParam(params, 0, 1)
 		e.cursorX = getColsParam(params, 1, 1)
@@ -282,6 +296,13 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 
 		for i := startIndex; i < endIndex; i++ {
 			e.grid.runes[i] = ' '
+		}
+	case 'X':
+		startX := e.cursorX
+		endX := min(e.cursorX+getParam(params, 0, 1), emulatorCols)
+
+		for x := startX; x < endX; x++ {
+			e.setRune(' ', x, e.cursorY)
 		}
 	default:
 		if isDebug {
