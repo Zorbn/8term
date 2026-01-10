@@ -64,6 +64,7 @@ func main() {
 
 	var panes []*pane
 	var command []rune
+	var tokenizedCommand tokenizeResult
 	focusedPaneIndex := 0
 	var ptyInputBuffer [4]byte
 
@@ -121,9 +122,12 @@ func main() {
 				}
 			}
 
+			tokenize(command, &tokenizedCommand)
+
 			if isKeyPressedOrRepeated(rl.KeyEnter) {
-				if runCommand(command, &panes, &focusedPaneIndex, homeDir) {
-					command = nil
+				if runCommand(&tokenizedCommand, &panes, &focusedPaneIndex, homeDir) {
+					command = command[:0]
+					tokenize(command, &tokenizedCommand)
 				} else {
 					errorFlashTimer = 1
 				}
@@ -259,10 +263,18 @@ func main() {
 
 		rl.DrawTextCodepoints(font, command, rl.NewVector2(0, paneY), scaledFontSize, 0, rl.White)
 
+		if len(tokenizedCommand.missingTrailingRunes) > 0 {
+			rl.DrawTextCodepoints(font, tokenizedCommand.missingTrailingRunes, rl.NewVector2(glyphSize.X*float32(len(command)), paneY), scaledFontSize, 0, rl.White)
+		}
+
 		if len(panes) == focusedPaneIndex {
 			position := rl.NewVector2(glyphSize.X*float32(len(command)), paneY)
 
 			rl.DrawRectangleV(position, glyphSize, rl.White)
+
+			if len(tokenizedCommand.missingTrailingRunes) > 0 {
+				rl.DrawTextCodepoint(font, tokenizedCommand.missingTrailingRunes[0], position, scaledFontSize, rl.Black)
+			}
 		}
 
 		rl.EndShaderMode()
@@ -272,15 +284,14 @@ func main() {
 	}
 }
 
-func runCommand(command []rune, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
-	tokens := tokenize(command)
+func runCommand(tokenizedCommand *tokenizeResult, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
 	var stringTokens []string
 
-	for _, t := range tokens {
+	for _, t := range tokenizedCommand.tokens {
 		stringTokens = append(stringTokens, string(t))
 	}
 
-	if len(tokens) == 0 {
+	if len(tokenizedCommand.tokens) == 0 {
 		return false
 	}
 

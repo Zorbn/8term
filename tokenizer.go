@@ -4,8 +4,15 @@ import "unicode"
 
 type token []rune
 
-func tokenize(text []rune) []token {
-	var tokens []token
+type tokenizeResult struct {
+	tokens               []token
+	missingTrailingRunes []rune
+}
+
+func tokenize(text []rune, result *tokenizeResult) {
+	result.tokens = result.tokens[:0]
+	result.missingTrailingRunes = result.missingTrailingRunes[:0]
+
 	var t token
 	r := ' '
 
@@ -16,22 +23,30 @@ func tokenize(text []rune) []token {
 			continue
 		}
 
+		hadDelimiter := false
+
 		switch r {
 		case '"':
-			t, text = tokenizeString(text, '"', '\\')
+			t, text, hadDelimiter = tokenizeString(text, '"', '\\')
+
+			if !hadDelimiter {
+				result.missingTrailingRunes = append(result.missingTrailingRunes, '"')
+			}
 		case '\'':
-			t, text = tokenizeString(text, '\'', 0)
+			t, text, hadDelimiter = tokenizeString(text, '\'', 0)
+
+			if !hadDelimiter {
+				result.missingTrailingRunes = append(result.missingTrailingRunes, '\'')
+			}
 		default:
 			t, text = tokenizeIdentifier(text, r)
 		}
 
-		tokens = append(tokens, t)
+		result.tokens = append(result.tokens, t)
 	}
-
-	return tokens
 }
 
-func tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune) {
+func tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune, bool) {
 	t := make(token, 0)
 	r := delimiter
 	isEscaped := false
@@ -40,7 +55,7 @@ func tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune) {
 		r, text = nextRune(text)
 
 		if !isEscaped && r == delimiter {
-			return t, text
+			return t, text, true
 		}
 
 		isEscaped = r == escape
@@ -52,8 +67,7 @@ func tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune) {
 		t = append(t, r)
 	}
 
-	// TODO: The string wasn't terminated, this should be an error! Probably return nil.
-	return t, text
+	return t, text, false
 }
 
 func tokenizeIdentifier(text []rune, firstRune rune) (token, []rune) {
