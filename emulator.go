@@ -135,8 +135,20 @@ func (e *emulator) setRune(r rune, x int, y int) {
 	index := y*emulatorCols + x
 
 	e.grid.runes[index] = r
-	e.grid.foregroundColors[index] = e.foregroundColor
-	e.grid.backgroundColors[index] = e.backgroundColor
+
+	foregroundColor, backgroundColor := e.foregroundColor, e.backgroundColor
+
+	if e.areColorsSwapped {
+		foregroundColor, backgroundColor = backgroundColor, foregroundColor
+	}
+
+	if e.areColorsBright {
+		foregroundColor = brightenTerminalColor(foregroundColor)
+		backgroundColor = brightenTerminalColor(backgroundColor)
+	}
+
+	e.grid.foregroundColors[index] = foregroundColor
+	e.grid.backgroundColors[index] = backgroundColor
 }
 
 func (e *emulator) newlineCursor() {
@@ -151,14 +163,6 @@ func (e *emulator) newlineCursor() {
 
 func (e *emulator) scrollContentUp() {
 	copy(e.grid.runes[0:], e.grid.runes[emulatorCols:])
-}
-
-func (e *emulator) clampCursorX() {
-	e.cursorX = min(max(e.cursorX, 0), emulatorCols-1)
-}
-
-func (e *emulator) clampCursorY() {
-	e.cursorY = min(max(e.cursorY, 0), emulatorRows-1)
 }
 
 func (e *emulator) Print(r rune) {
@@ -426,35 +430,59 @@ func (e *emulator) parseFormatting(params [][]uint16) {
 }
 
 func parseColorFromParameters(params [][]uint16, start int) (uint32, int) {
-	if start >= len(params) {
+	if start+1 >= len(params) {
 		return 0, 0
 	}
 
-	kind := getParam(params, 0, 0)
+	kind := getParam(params, start+1, 0)
 
 	switch kind {
 	case 2:
 		// RGB true color
-		if len(params) < 3 {
+		if start+4 >= len(params) {
 			return 0, 0
 		}
 
-		r := getParam(params, 1, 0) & 0xFF
-		g := getParam(params, 2, 0) & 0xFF
-		b := getParam(params, 3, 0) & 0xFF
+		r := getParam(params, start+2, 0) & 0xFF
+		g := getParam(params, start+3, 0) & 0xFF
+		b := getParam(params, start+4, 0) & 0xFF
 
-		return uint32((r << 16) | (g << 8) | b), 3
+		return uint32((r << 16) | (g << 8) | b), 4
 
 	case 5:
 		// 256 color table
-		if len(params) < 1 {
+		if start+2 >= len(params) {
 			return 0, 0
 		}
-		index := getParam(params, 1, 0) & 0xFF
 
-		return colorTable[index], 1
+		index := getParam(params, start+2, 0) & 0xFF
+
+		return colorTable[index], 2
 
 	default:
 		return 0, 0
+	}
+}
+
+func brightenTerminalColor(color uint32) uint32 {
+	switch color {
+	case Background:
+		return BrightBackground
+	case Foreground:
+		return BrightForeground
+	case Red:
+		return BrightRed
+	case Green:
+		return BrightGreen
+	case Yellow:
+		return BrightYellow
+	case Blue:
+		return BrightBlue
+	case Magenta:
+		return BrightMagenta
+	case Cyan:
+		return BrightCyan
+	default:
+		return color
 	}
 }

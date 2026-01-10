@@ -358,7 +358,7 @@ func terminalColorToColor(color uint32) color.RGBA {
 	case Cyan:
 		return rl.SkyBlue
 	case BrightBackground:
-		return rl.Black
+		return brightenColor(rl.Black)
 	case BrightForeground:
 		return brightenColor(rl.White)
 	case BrightRed:
@@ -383,5 +383,13 @@ func terminalColorToColor(color uint32) color.RGBA {
 }
 
 func brightenColor(color color.RGBA) color.RGBA {
-	return rl.NewColor((color.R+rl.White.R)/2, (color.G+rl.White.R)/2, (color.B+rl.White.R)/2, color.A)
+	r := brightenColorComponent(color.R)
+	g := brightenColorComponent(color.G)
+	b := brightenColorComponent(color.B)
+
+	return rl.NewColor(r, g, b, color.A)
+}
+
+func brightenColorComponent(x uint8) uint8 {
+	return uint8((int(x)*2 + 255) / 3)
 }
