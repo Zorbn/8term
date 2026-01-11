@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"image/color"
+	"math"
 	"os"
 	"slices"
 	"unicode"
@@ -26,6 +27,7 @@ type Vector2 struct {
 }
 
 const startGlyph = ' ' + 1
+const defaultWindowWidth, defaultWindowHeight = 800, 800
 
 type GlyphAtlas struct {
 	texture     *sdl.Texture
@@ -56,8 +58,7 @@ func main() {
 
 	defer ttf.Quit()
 
-	const screenWidth, screenHeight = 800, 450
-	window, renderer, err := sdl.CreateWindowAndRenderer("8term", screenWidth, screenHeight, sdl.WINDOW_RESIZABLE|sdl.WINDOW_HIGH_PIXEL_DENSITY)
+	window, renderer, err := sdl.CreateWindowAndRenderer("8term", defaultWindowWidth, defaultWindowHeight, sdl.WINDOW_RESIZABLE|sdl.WINDOW_HIGH_PIXEL_DENSITY)
 
 	if err != nil {
 		panic(err)
@@ -77,7 +78,7 @@ func main() {
 		panic(err)
 	}
 
-	fontSize := 16 * dpi
+	fontSize := 14 * dpi
 
 	rwops, err := sdl.IOFromConstMem(fontData)
 
@@ -122,13 +123,16 @@ func main() {
 	var errorFlashTimer float32
 
 	lastTime := sdl.Ticks()
+	var time float32
 	running := true
 
 	for running {
 		currentTime := sdl.Ticks()
 		dt := float32(currentTime-lastTime) / 1000.0
 		lastTime = currentTime
+		time += dt
 		errorFlashTimer -= dt
+		didResize := false
 
 		var event sdl.Event
 
@@ -159,6 +163,9 @@ func main() {
 
 				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &tokenizedCommand,
 					&errorFlashTimer, homeDir, ptyInputBuffer)
+
+			case sdl.EVENT_WINDOW_RESIZED:
+				didResize = true
 			}
 		}
 
@@ -188,10 +195,19 @@ func main() {
 			targetY = paneY - windowHeight + atlas.glyphHeight + cameraMargin
 		}
 
-		cameraY = lerp(cameraY, targetY, dt*cameraSpeed)
+		if didResize {
+			cameraY = targetY
+		} else {
+			cameraY = lerp(cameraY, targetY, dt*cameraSpeed)
+		}
+
 		cameraX := (atlas.glyphWidth*float32(emulatorCols) - windowWidth) / 2
 
-		renderer.SetDrawColor(245, 245, 245, 255)
+		backgroundR := uint8(math.Sin(0.3*float64(time)+0)*10 + 10)
+		backgroundG := uint8(math.Sin(0.3*float64(time)+2)*10 + 10)
+		backgroundB := uint8(math.Sin(0.3*float64(time)+4)*10 + 10)
+
+		renderer.SetDrawColor(backgroundR, backgroundG, backgroundB, 255)
 		renderer.Clear()
 
 		paneWidth := atlas.glyphWidth * float32(emulatorCols)
@@ -204,9 +220,10 @@ func main() {
 
 			if paneY+paneHeight > cameraY {
 				borderColor := getPaneBorderColor(i, focusedPaneIndex)
+				borderWidth := getPaneBorderWidth(i, focusedPaneIndex, paneBorderWidth, time)
 				drawBorderedRect(renderer, cameraX, cameraY,
 					Vector2{0, paneY}, Vector2{paneWidth, paneHeight},
-					paneBorderWidth, borderColor, color.RGBA{0, 0, 0, 255})
+					borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 			}
 
 			paneY += atlas.glyphHeight * float32(emulator.usedHeight+1)
@@ -259,9 +276,10 @@ func main() {
 		}
 
 		borderColor := getPaneBorderColor(len(panes), focusedPaneIndex)
+		borderWidth := getPaneBorderWidth(len(panes), focusedPaneIndex, paneBorderWidth, time)
 		drawBorderedRect(renderer, cameraX, cameraY,
 			Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight},
-			paneBorderWidth, borderColor, color.RGBA{0, 0, 0, 255})
+			borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 
 		if errorFlashTimer > 0 {
 			errorColor := color.RGBA{255, 0, 0, uint8(errorFlashTimer * 255)}
@@ -368,7 +386,7 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 			*focusedPaneIndex = max(*focusedPaneIndex-1, 0)
 		case sdl.K_DOWN:
 			*focusedPaneIndex = min(*focusedPaneIndex+1, len(*panes))
-		case sdl.K_W:
+		case sdl.K_X:
 			if *focusedPaneIndex < len(*panes) {
 				*panes = slices.Delete(*panes, *focusedPaneIndex, *focusedPaneIndex+1)
 			}
@@ -467,6 +485,17 @@ func getPaneBorderColor(index, focusedIndex int) color.RGBA {
 		return color.RGBA{135, 206, 235, 255}
 	} else {
 		return color.RGBA{211, 211, 211, 255}
+	}
+}
+
+func getPaneBorderWidth(index, focusedIndex int, paneBorderWidth, time float32) float32 {
+	if index == focusedIndex {
+		scaledTime := float64(time * 5)
+		scale := (math.Sin(scaledTime) + 2) / 2
+
+		return paneBorderWidth * float32(scale)
+	} else {
+		return paneBorderWidth
 	}
 }
 
