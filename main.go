@@ -236,10 +236,8 @@ func main() {
 							drawRect(renderer, cameraX, cameraY, position, glyphSize, c)
 						}
 
-						if !unicode.IsSpace(r) {
-							c := terminalColorToColor(foregroundColor)
-							drawGlyph(renderer, &atlas, cameraX, cameraY, r, position, c)
-						}
+						c := terminalColorToColor(foregroundColor)
+						drawGlyph(renderer, &atlas, cameraX, cameraY, r, position, c)
 					}
 				}
 
@@ -422,10 +420,14 @@ func drawRect(renderer *sdl.Renderer, cameraX, cameraY float32, pos, size Vector
 func drawGlyph(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
 	r rune, pos Vector2, c color.RGBA) {
 
+	if unicode.IsSpace(r) {
+		return
+	}
+
 	index := int(r - startGlyph)
 
 	if index < 0 || index > len(atlas.glyphs) {
-		return
+		index = int('?' - startGlyph)
 	}
 
 	srcRect := &atlas.glyphs[index]
