@@ -26,12 +26,17 @@ type Vector2 struct {
 	X, Y float32
 }
 
-const startGlyph = ' ' + 1
 const defaultWindowWidth, defaultWindowHeight = 800, 800
 
 type GlyphAtlas struct {
+	renderer    *sdl.Renderer
+	font        *ttf.Font
 	texture     *sdl.Texture
-	glyphs      []sdl.FRect
+	glyphs      map[rune]sdl.FRect
+	cursorX     int32
+	cursorY     int32
+	rowHeight   int32
+	size        int32
 	glyphWidth  float32
 	glyphHeight float32
 }
@@ -94,7 +99,7 @@ func main() {
 
 	defer font.Close()
 
-	atlas := createGlyphAtlas(renderer, font)
+	atlas := newGlyphAtlas(renderer, font)
 	defer atlas.texture.Destroy()
 
 	glyphSize := Vector2{atlas.glyphWidth, atlas.glyphHeight}
@@ -254,7 +259,7 @@ func main() {
 						}
 
 						c := terminalColorToColor(foregroundColor)
-						drawGlyph(renderer, &atlas, cameraX, cameraY, r, position, c)
+						drawGlyph(renderer, atlas, cameraX, cameraY, r, position, c)
 					}
 				}
 
@@ -267,7 +272,7 @@ func main() {
 
 					drawRect(renderer, cameraX, cameraY, position, glyphSize,
 						color.RGBA{255, 255, 255, 255})
-					drawGlyph(renderer, &atlas, cameraX, cameraY, r, position,
+					drawGlyph(renderer, atlas, cameraX, cameraY, r, position,
 						color.RGBA{0, 0, 0, 255})
 				}
 			}
@@ -288,12 +293,12 @@ func main() {
 		}
 
 		if len(command) > 0 {
-			drawText(renderer, &atlas, cameraX, cameraY, command,
+			drawText(renderer, atlas, cameraX, cameraY, command,
 				Vector2{0, paneY}, color.RGBA{255, 255, 255, 255})
 		}
 
 		if len(tokenizedCommand.missingTrailingRunes) > 0 {
-			drawText(renderer, &atlas, cameraX, cameraY,
+			drawText(renderer, atlas, cameraX, cameraY,
 				tokenizedCommand.missingTrailingRunes,
 				Vector2{atlas.glyphWidth * float32(len(command)), paneY},
 				color.RGBA{255, 255, 255, 255})
@@ -306,7 +311,7 @@ func main() {
 				color.RGBA{255, 255, 255, 255})
 
 			if len(tokenizedCommand.missingTrailingRunes) > 0 {
-				drawGlyph(renderer, &atlas, cameraX, cameraY,
+				drawGlyph(renderer, atlas, cameraX, cameraY,
 					tokenizedCommand.missingTrailingRunes[0], position,
 					color.RGBA{0, 0, 0, 255})
 			}
@@ -316,61 +321,83 @@ func main() {
 	}
 }
 
-func createGlyphAtlas(renderer *sdl.Renderer, font *ttf.Font) GlyphAtlas {
-	const glyphsPerRow = 16
-	const numGlyphs = int('~'-startGlyph) + 1
-
+func newGlyphAtlas(renderer *sdl.Renderer, font *ttf.Font) *GlyphAtlas {
 	sdlGlyphWidth, sdlGlyphHeight, _ := font.StringSize("M")
 	glyphWidth, glyphHeight := int(sdlGlyphWidth), int(sdlGlyphHeight)
 
-	atlasWidth := glyphWidth * glyphsPerRow
-	atlasHeight := glyphHeight * ((numGlyphs + glyphsPerRow - 1) / glyphsPerRow)
+	const textureSize = 2048
 
-	surface, err := sdl.CreateSurface(atlasWidth, atlasHeight, sdl.PIXELFORMAT_RGBA8888)
+	texture, err := renderer.CreateTexture(sdl.PIXELFORMAT_RGBA8888, sdl.TEXTUREACCESS_TARGET, textureSize, textureSize)
 	if err != nil {
 		panic(err)
+	}
+
+	texture.SetBlendMode(sdl.BLENDMODE_BLEND)
+	texture.SetScaleMode(sdl.SCALEMODE_LINEAR)
+
+	renderer.SetRenderTarget(texture)
+	renderer.SetDrawColor(0, 0, 0, 0)
+	renderer.Clear()
+	renderer.SetRenderTarget(nil)
+
+	return &GlyphAtlas{
+		renderer:    renderer,
+		font:        font,
+		texture:     texture,
+		glyphs:      make(map[rune]sdl.FRect),
+		size:        textureSize,
+		glyphWidth:  float32(glyphWidth),
+		glyphHeight: float32(glyphHeight),
+		rowHeight:   int32(glyphHeight),
+	}
+}
+
+func (atlas *GlyphAtlas) addGlyph(r rune) {
+	if _, ok := atlas.glyphs[r]; ok {
+		return
+	}
+
+	surface, err := atlas.font.RenderTextBlended(string(r), sdl.Color{R: 255, G: 255, B: 255, A: 255})
+	if err != nil {
+		return
 	}
 	defer surface.Destroy()
 
-	surface.FillRect(nil, surface.MapRGBA(0, 0, 0, 0))
-
-	atlas := GlyphAtlas{
-		glyphs:      make([]sdl.FRect, numGlyphs),
-		glyphWidth:  float32(glyphWidth),
-		glyphHeight: float32(glyphHeight),
+	if atlas.cursorX+surface.W > atlas.size {
+		atlas.cursorX = 0
+		atlas.cursorY += atlas.rowHeight + 1
+		atlas.rowHeight = surface.H
 	}
 
-	for i := range numGlyphs {
-		r := rune(startGlyph + i)
-		x := (i % glyphsPerRow) * glyphWidth
-		y := (i / glyphsPerRow) * glyphHeight
-
-		glyphSurface, err := font.RenderTextBlended(string(r), sdl.Color{R: 255, G: 255, B: 255, A: 255})
-		if err != nil {
-			continue
-		}
-
-		dstRect := &sdl.Rect{X: int32(x), Y: int32(y), W: glyphSurface.W, H: glyphSurface.H}
-		glyphSurface.Blit(nil, surface, dstRect)
-		glyphSurface.Destroy()
-
-		atlas.glyphs[i] = sdl.FRect{
-			X: float32(x),
-			Y: float32(y),
-			W: float32(glyphWidth),
-			H: float32(glyphHeight),
-		}
+	if atlas.cursorY+surface.H > atlas.size {
+		return
 	}
 
-	atlas.texture, err = renderer.CreateTextureFromSurface(surface)
+	if surface.H > atlas.rowHeight {
+		atlas.rowHeight = surface.H
+	}
+
+	tmpTexture, err := atlas.renderer.CreateTextureFromSurface(surface)
 	if err != nil {
-		panic(err)
+		return
+	}
+	defer tmpTexture.Destroy()
+
+	tmpTexture.SetBlendMode(sdl.BLENDMODE_NONE)
+
+	dstRect := &sdl.FRect{
+		X: float32(atlas.cursorX),
+		Y: float32(atlas.cursorY),
+		W: float32(surface.W),
+		H: float32(surface.H),
 	}
 
-	atlas.texture.SetBlendMode(sdl.BLENDMODE_BLEND)
-	atlas.texture.SetScaleMode(sdl.SCALEMODE_LINEAR)
+	atlas.renderer.SetRenderTarget(atlas.texture)
+	atlas.renderer.RenderTexture(tmpTexture, nil, dstRect)
+	atlas.renderer.SetRenderTarget(nil)
 
-	return atlas
+	atlas.glyphs[r] = *dstRect
+	atlas.cursorX += surface.W + 1
 }
 
 func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
@@ -442,13 +469,20 @@ func drawGlyph(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float
 		return
 	}
 
-	index := int(r - startGlyph)
-
-	if index < 0 || index > len(atlas.glyphs) {
-		index = int('?' - startGlyph)
+	if _, ok := atlas.glyphs[r]; !ok {
+		atlas.addGlyph(r)
 	}
 
-	srcRect := &atlas.glyphs[index]
+	srcRect, ok := atlas.glyphs[r]
+	if !ok {
+		if _, ok := atlas.glyphs['?']; !ok {
+			atlas.addGlyph('?')
+		}
+		srcRect, ok = atlas.glyphs['?']
+		if !ok {
+			return
+		}
+	}
 
 	x := pos.X - cameraX
 	y := pos.Y - cameraY
@@ -457,7 +491,7 @@ func drawGlyph(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float
 	atlas.texture.SetAlphaMod(c.A)
 
 	dstRect := &sdl.FRect{X: x, Y: y, W: atlas.glyphWidth, H: atlas.glyphHeight}
-	renderer.RenderTexture(atlas.texture, srcRect, dstRect)
+	renderer.RenderTexture(atlas.texture, &srcRect, dstRect)
 }
 
 func drawText(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
