@@ -114,7 +114,6 @@ func main() {
 	var command []rune
 	var tokenizedCommand tokenizeResult
 	focusedPaneIndex := 0
-	var ptyInputBuffer [4]byte
 
 	os.Setenv("TERM", "xterm-256color")
 	os.Setenv("COLORTERM", "truecolor")
@@ -158,7 +157,7 @@ func main() {
 					pane := panes[focusedPaneIndex]
 					for _, r := range textEvent.Text {
 						if r != 0 {
-							writeRuneToPty(&pane.pty, ptyInputBuffer, r)
+							writeRuneToPty(&pane.pty, r)
 						}
 					}
 				}
@@ -167,7 +166,7 @@ func main() {
 				keyEvent := event.KeyboardEvent()
 
 				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &tokenizedCommand,
-					&errorFlashTimer, homeDir, ptyInputBuffer)
+					&errorFlashTimer, homeDir)
 
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
@@ -200,7 +199,7 @@ func main() {
 			targetY = paneY - windowHeight + atlas.glyphHeight + cameraMargin
 		}
 
-		if didResize {
+		if didResize || cameraY == 0 {
 			cameraY = targetY
 		} else {
 			cameraY = lerp(cameraY, targetY, dt*cameraSpeed)
@@ -292,20 +291,32 @@ func main() {
 				Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight}, errorColor)
 		}
 
-		if len(command) > 0 {
-			drawText(renderer, atlas, cameraX, cameraY, command,
-				Vector2{0, paneY}, color.RGBA{255, 255, 255, 255})
+		cwd, err := os.Getwd()
+
+		if err != nil {
+			cwd = "?"
 		}
+
+		var commandX float32
+
+		commandX += drawString(renderer, atlas, cameraX, cameraY, cwd,
+			Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
+
+		commandX += drawString(renderer, atlas, cameraX, cameraY, "> ",
+			Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
+
+		commandX += drawText(renderer, atlas, cameraX, cameraY, command,
+			Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
 
 		if len(tokenizedCommand.missingTrailingRunes) > 0 {
 			drawText(renderer, atlas, cameraX, cameraY,
 				tokenizedCommand.missingTrailingRunes,
-				Vector2{atlas.glyphWidth * float32(len(command)), paneY},
+				Vector2{commandX, paneY},
 				color.RGBA{255, 255, 255, 255})
 		}
 
 		if len(panes) == focusedPaneIndex {
-			position := Vector2{atlas.glyphWidth * float32(len(command)), paneY}
+			position := Vector2{commandX, paneY}
 
 			drawRect(renderer, cameraX, cameraY, position, glyphSize,
 				color.RGBA{255, 255, 255, 255})
@@ -402,7 +413,7 @@ func (atlas *GlyphAtlas) addGlyph(r rune) {
 
 func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 	command *[]rune, tokenizedCommand *tokenizeResult, errorFlashTimer *float32,
-	homeDir string, ptyInputBuffer [4]byte) {
+	homeDir string) {
 
 	modState := sdl.GetModState()
 	cmdPressed := (modState & sdl.KMOD_GUI) != 0
@@ -441,13 +452,13 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 		pane := (*panes)[*focusedPaneIndex]
 		switch key {
 		case sdl.K_BACKSPACE:
-			writeRuneToPty(&pane.pty, ptyInputBuffer, '\x7f')
+			writeRuneToPty(&pane.pty, '\x7f')
 		case sdl.K_TAB:
-			writeRuneToPty(&pane.pty, ptyInputBuffer, '\t')
+			writeRuneToPty(&pane.pty, '\t')
 		case sdl.K_RETURN:
-			writeRuneToPty(&pane.pty, ptyInputBuffer, '\r')
+			writeRuneToPty(&pane.pty, '\r')
 		case sdl.K_ESCAPE:
-			writeRuneToPty(&pane.pty, ptyInputBuffer, '\x1b')
+			writeRuneToPty(&pane.pty, '\x1b')
 		}
 	}
 }
@@ -494,13 +505,26 @@ func drawGlyph(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float
 	renderer.RenderTexture(atlas.texture, &srcRect, dstRect)
 }
 
-func drawText(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
-	text []rune, pos Vector2, c color.RGBA) {
+func drawString(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
+	text string, pos Vector2, c color.RGBA) float32 {
 
 	for i, r := range text {
 		glyphPos := Vector2{pos.X + atlas.glyphWidth*float32(i), pos.Y}
 		drawGlyph(renderer, atlas, cameraX, cameraY, r, glyphPos, c)
 	}
+
+	return atlas.glyphWidth * float32(len(text))
+}
+
+func drawText(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
+	text []rune, pos Vector2, c color.RGBA) float32 {
+
+	for i, r := range text {
+		glyphPos := Vector2{pos.X + atlas.glyphWidth*float32(i), pos.Y}
+		drawGlyph(renderer, atlas, cameraX, cameraY, r, glyphPos, c)
+	}
+
+	return atlas.glyphWidth * float32(len(text))
 }
 
 func drawBorderedRect(renderer *sdl.Renderer, cameraX, cameraY float32,
@@ -573,7 +597,9 @@ func runCommand(tokenizedCommand *tokenizeResult, panes *[]*pane, focusedPaneInd
 	return true
 }
 
-func writeRuneToPty(pty *pty, buffer [4]byte, r rune) {
+func writeRuneToPty(pty *pty, r rune) {
+	var buffer [4]byte
+
 	size := utf8.EncodeRune(buffer[:], r)
 	pty.write(buffer[:size])
 }
