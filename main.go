@@ -9,9 +9,11 @@ import (
 	"slices"
 	"unicode"
 	"unicode/utf8"
-	"unsafe"
 
-	rl "github.com/gen2brain/raylib-go/raylib"
+	"github.com/Zyko0/go-sdl3/bin/binsdl"
+	"github.com/Zyko0/go-sdl3/bin/binttf"
+	"github.com/Zyko0/go-sdl3/sdl"
+	"github.com/Zyko0/go-sdl3/ttf"
 )
 
 var isDebug bool
@@ -19,8 +21,18 @@ var isDebug bool
 //go:embed Inconsolata-Regular.ttf
 var fontData []byte
 
-//go:embed sdf.fs
-var fragmentShaderCode string
+type Vector2 struct {
+	X, Y float32
+}
+
+const startGlyph = ' ' + 1
+
+type GlyphAtlas struct {
+	texture     *sdl.Texture
+	glyphs      []sdl.FRect
+	glyphWidth  float32
+	glyphHeight float32
+}
 
 func main() {
 	isDebugFlag := flag.Bool("debug", false, "Enable debugging mode")
@@ -29,38 +41,68 @@ func main() {
 
 	fmt.Println("Hello, world!", isDebug)
 
-	rl.SetConfigFlags(rl.FlagWindowHighdpi | rl.FlagMsaa4xHint | rl.FlagWindowResizable)
+	defer binsdl.Load().Unload()
+	defer binttf.Load().Unload()
+
+	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
+		panic(err)
+	}
+
+	defer sdl.Quit()
+
+	if err := ttf.Init(); err != nil {
+		panic(err)
+	}
+
+	defer ttf.Quit()
 
 	const screenWidth, screenHeight = 800, 450
-	rl.InitWindow(screenWidth, screenHeight, "8term")
-	defer rl.CloseWindow()
+	window, renderer, err := sdl.CreateWindowAndRenderer("8term", screenWidth, screenHeight, sdl.WINDOW_RESIZABLE|sdl.WINDOW_HIGH_PIXEL_DENSITY)
 
-	rl.SetExitKey(rl.KeyNull)
+	if err != nil {
+		panic(err)
+	}
 
-	dpi := rl.GetWindowScaleDPI().X
-	fontSize := int32(16 * dpi)
+	defer window.Destroy()
+	defer renderer.Destroy()
 
-	font := rl.Font{BaseSize: fontSize, CharsCount: 95}
-	defer rl.UnloadFont(font)
+	window.StartTextInput()
 
-	glyphs := rl.LoadFontData(fontData, fontSize, nil, 0, rl.FontSdf)
-	font.Chars = &glyphs[0]
+	renderer.SetVSync(1)
+	renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
-	atlas := rl.GenImageFontAtlas(unsafe.Slice(font.Chars, font.CharsCount), unsafe.Slice(&font.Recs, font.CharsCount), fontSize, 0, 1)
-	font.Texture = rl.LoadTextureFromImage(&atlas)
-	rl.UnloadImage(&atlas)
+	dpi, err := window.PixelDensity()
 
-	shader := rl.LoadShaderFromMemory("", fragmentShaderCode)
-	defer rl.UnloadShader(shader)
-	rl.SetTextureFilter(font.Texture, rl.FilterBilinear)
+	if err != nil {
+		panic(err)
+	}
 
-	scaledFontSize := float32(fontSize) / dpi
-	glyphSize := rl.MeasureTextEx(font, "M", scaledFontSize, 0)
-	paneBorderWidth := glyphSize.X / 2
+	fontSize := 16 * dpi
+
+	rwops, err := sdl.IOFromConstMem(fontData)
+
+	if err != nil {
+		panic(err)
+	}
+
+	font, err := ttf.OpenFontIO(rwops, true, fontSize)
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer font.Close()
+
+	atlas := createGlyphAtlas(renderer, font)
+	defer atlas.texture.Destroy()
+
+	glyphSize := Vector2{atlas.glyphWidth, atlas.glyphHeight}
+
+	paneBorderWidth := atlas.glyphWidth / 2
 
 	var cameraY float32 = 0
 	var cameraSpeed float32 = 10
-	cameraMargin := glyphSize.Y * 3
+	cameraMargin := atlas.glyphHeight * 3
 
 	var panes []*pane
 	var command []rune
@@ -79,87 +121,44 @@ func main() {
 
 	var errorFlashTimer float32
 
-	// rl.SetTargetFPS(144)
+	lastTime := sdl.Ticks()
+	running := true
 
-	for !rl.WindowShouldClose() {
-		// Update:
-		dt := rl.GetFrameTime()
+	for running {
+		currentTime := sdl.Ticks()
+		dt := float32(currentTime-lastTime) / 1000.0
+		lastTime = currentTime
 		errorFlashTimer -= dt
 
-		if rl.IsKeyDown(rl.KeyLeftSuper) || rl.IsKeyDown(rl.KeyRightSuper) {
-			if isKeyPressedOrRepeated(rl.KeyUp) {
-				focusedPaneIndex = max(focusedPaneIndex-1, 0)
-			}
+		var event sdl.Event
 
-			if isKeyPressedOrRepeated(rl.KeyDown) {
-				focusedPaneIndex = min(focusedPaneIndex+1, len(panes))
-			}
+		for sdl.PollEvent(&event) {
+			switch event.Type {
+			case sdl.EVENT_QUIT:
+				running = false
 
-			if isKeyPressedOrRepeated(rl.KeyW) && focusedPaneIndex < len(panes) {
-				panes = slices.Delete(panes, focusedPaneIndex, focusedPaneIndex+1)
-			}
-		}
-
-		if focusedPaneIndex >= len(panes) {
-			// Send input to command:
-			for {
-				r := rune(rl.GetCharPressed())
-
-				if r == 0 {
-					break
-				}
-
-				command = append(command, r)
-			}
-
-			// TODO:
-			// Should actually use GetKeyPressed in a loop to get pressed keys then check each frame if pressed keys have been released.
-			// Then we would need our own repeat timer logic.
-
-			if isKeyPressedOrRepeated(rl.KeyBackspace) {
-				if len(command) > 0 {
-					command = command[:len(command)-1]
-				}
-			}
-
-			tokenize(command, &tokenizedCommand)
-
-			if isKeyPressedOrRepeated(rl.KeyEnter) {
-				if runCommand(&tokenizedCommand, &panes, &focusedPaneIndex, homeDir) {
-					command = command[:0]
-					tokenize(command, &tokenizedCommand)
+			case sdl.EVENT_TEXT_INPUT:
+				textEvent := event.TextInputEvent()
+				if focusedPaneIndex >= len(panes) {
+					for _, r := range textEvent.Text {
+						if r != 0 {
+							command = append(command, r)
+						}
+					}
 				} else {
-					errorFlashTimer = 1
-				}
-			}
-		} else {
-			// Send input to pane:
-			pane := panes[focusedPaneIndex]
-
-			for {
-				r := rune(rl.GetCharPressed())
-
-				if r == 0 {
-					break
+					pane := panes[focusedPaneIndex]
+					for _, r := range textEvent.Text {
+						if r != 0 {
+							writeRuneToPty(&pane.pty, ptyInputBuffer, r)
+						}
+					}
 				}
 
-				writeRuneToPty(&pane.pty, ptyInputBuffer, r)
-			}
+			case sdl.EVENT_KEY_DOWN:
+				keyEvent := event.KeyboardEvent()
 
-			if isKeyPressedOrRepeated(rl.KeyBackspace) {
-				writeRuneToPty(&pane.pty, ptyInputBuffer, '\x7f')
-			}
-
-			if isKeyPressedOrRepeated(rl.KeyTab) {
-				writeRuneToPty(&pane.pty, ptyInputBuffer, '\t')
-			}
-
-			if isKeyPressedOrRepeated(rl.KeyEnter) {
-				writeRuneToPty(&pane.pty, ptyInputBuffer, '\r')
-			}
-
-			if isKeyPressedOrRepeated(rl.KeyEscape) {
-				writeRuneToPty(&pane.pty, ptyInputBuffer, '\x1b')
+				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &tokenizedCommand,
+					&errorFlashTimer, homeDir, ptyInputBuffer)
 			}
 		}
 
@@ -169,55 +168,60 @@ func main() {
 			pane.handleOutput()
 
 			if i < focusedPaneIndex {
-				paneY += glyphSize.Y * float32(pane.emulator.usedHeight+1)
+				paneY += atlas.glyphHeight * float32(pane.emulator.usedHeight+1)
 			}
 		}
 
-		windowWidth := float32(rl.GetRenderWidth()) / dpi
-		windowHeight := float32(rl.GetRenderHeight()) / dpi
-
-		focusedPaneHeight := glyphSize.Y
-
-		if focusedPaneIndex < len(panes) {
-			focusedPaneHeight = glyphSize.Y * float32(panes[focusedPaneIndex].emulator.usedHeight)
+		sdlWindowWidth, sdlWindowHeight, err := renderer.RenderOutputSize()
+		if err != nil {
+			panic(err)
 		}
 
-		cameraY = rl.Lerp(cameraY, paneY-windowHeight+focusedPaneHeight+cameraMargin, dt*cameraSpeed)
-		cameraX := (glyphSize.X*float32(emulatorCols) - windowWidth) / 2
+		windowWidth := float32(sdlWindowWidth)
+		windowHeight := float32(sdlWindowHeight)
 
-		// Draw:
-		rl.BeginDrawing()
-		rl.ClearBackground(rl.RayWhite)
-		rl.Translatef(-cameraX, -cameraY, 0)
+		var targetY float32
 
-		paneWidth := glyphSize.X * float32(emulatorCols)
+		if focusedPaneIndex < len(panes) {
+			targetY = paneY - (windowHeight-float32(panes[focusedPaneIndex].emulator.usedHeight)*atlas.glyphHeight)/2
+		} else {
+			targetY = paneY - windowHeight + atlas.glyphHeight + cameraMargin
+		}
+
+		cameraY = lerp(cameraY, targetY, dt*cameraSpeed)
+		cameraX := (atlas.glyphWidth*float32(emulatorCols) - windowWidth) / 2
+
+		renderer.SetDrawColor(245, 245, 245, 255)
+		renderer.Clear()
+
+		paneWidth := atlas.glyphWidth * float32(emulatorCols)
 		paneY = 0
 
 		for i, pane := range panes {
 			emulator := &pane.emulator
 
-			paneHeight := glyphSize.Y * float32(emulator.usedHeight)
+			paneHeight := atlas.glyphHeight * float32(emulator.usedHeight)
 
 			if paneY+paneHeight > cameraY {
 				borderColor := getPaneBorderColor(i, focusedPaneIndex)
-				drawBorderedRect(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, paneHeight), paneBorderWidth, borderColor, rl.Black)
+				drawBorderedRect(renderer, cameraX, cameraY,
+					Vector2{0, paneY}, Vector2{paneWidth, paneHeight},
+					paneBorderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 			}
 
-			paneY += glyphSize.Y * float32(emulator.usedHeight+1)
+			paneY += atlas.glyphHeight * float32(emulator.usedHeight+1)
 		}
-
-		rl.BeginShaderMode(shader)
 
 		paneY = 0
 
 		for paneIndex, pane := range panes {
 			emulator := &pane.emulator
 
-			paneHeight := glyphSize.Y * float32(emulator.usedHeight)
+			paneHeight := atlas.glyphHeight * float32(emulator.usedHeight)
 
 			if paneY+paneHeight > cameraY {
 				for y := range emulator.usedHeight {
-					lineY := glyphSize.Y*float32(y) + paneY
+					lineY := atlas.glyphHeight*float32(y) + paneY
 
 					for x := range emulatorCols {
 						i := y*emulatorCols + x
@@ -225,62 +229,242 @@ func main() {
 						foregroundColor := emulator.grid.foregroundColors[i]
 						backgroundColor := emulator.grid.backgroundColors[i]
 
-						position := rl.NewVector2(glyphSize.X*float32(x), lineY)
+						position := Vector2{atlas.glyphWidth * float32(x), lineY}
 
 						if backgroundColor != Background {
-							color := terminalColorToColor(backgroundColor)
-							rl.DrawRectangleV(position, glyphSize, color)
+							c := terminalColorToColor(backgroundColor)
+							drawRect(renderer, cameraX, cameraY, position, glyphSize, c)
 						}
 
 						if !unicode.IsSpace(r) {
-							color := terminalColorToColor(foregroundColor)
-							rl.DrawTextCodepoint(font, r, position, scaledFontSize, color)
+							c := terminalColorToColor(foregroundColor)
+							drawGlyph(renderer, &atlas, cameraX, cameraY, r, position, c)
 						}
 					}
 				}
 
 				if paneIndex == focusedPaneIndex && emulator.cursorY < emulator.usedHeight {
 					r := emulator.grid.runes[emulator.cursorY*emulatorCols+emulator.cursorX]
-					position := rl.NewVector2(glyphSize.X*float32(emulator.cursorX), paneY+glyphSize.Y*float32(emulator.cursorY))
+					position := Vector2{
+						atlas.glyphWidth * float32(emulator.cursorX),
+						paneY + atlas.glyphHeight*float32(emulator.cursorY),
+					}
 
-					rl.DrawRectangleV(position, glyphSize, rl.White)
-					rl.DrawTextCodepoint(font, r, position, scaledFontSize, rl.Black)
+					drawRect(renderer, cameraX, cameraY, position, glyphSize,
+						color.RGBA{255, 255, 255, 255})
+					drawGlyph(renderer, &atlas, cameraX, cameraY, r, position,
+						color.RGBA{0, 0, 0, 255})
 				}
 			}
 
-			paneY += glyphSize.Y * float32(emulator.usedHeight+1)
+			paneY += atlas.glyphHeight * float32(emulator.usedHeight+1)
 		}
 
 		borderColor := getPaneBorderColor(len(panes), focusedPaneIndex)
-		drawBorderedRect(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), paneBorderWidth, borderColor, rl.Black)
+		drawBorderedRect(renderer, cameraX, cameraY,
+			Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight},
+			paneBorderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 
 		if errorFlashTimer > 0 {
-			errorColor := rl.Red
-			errorColor.A = uint8(errorFlashTimer * 255)
-
-			rl.DrawRectangleV(rl.NewVector2(0, paneY), rl.NewVector2(paneWidth, glyphSize.Y), errorColor)
+			errorColor := color.RGBA{255, 0, 0, uint8(errorFlashTimer * 255)}
+			drawRect(renderer, cameraX, cameraY,
+				Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight}, errorColor)
 		}
 
-		rl.DrawTextCodepoints(font, command, rl.NewVector2(0, paneY), scaledFontSize, 0, rl.White)
+		if len(command) > 0 {
+			drawText(renderer, &atlas, cameraX, cameraY, command,
+				Vector2{0, paneY}, color.RGBA{255, 255, 255, 255})
+		}
 
 		if len(tokenizedCommand.missingTrailingRunes) > 0 {
-			rl.DrawTextCodepoints(font, tokenizedCommand.missingTrailingRunes, rl.NewVector2(glyphSize.X*float32(len(command)), paneY), scaledFontSize, 0, rl.White)
+			drawText(renderer, &atlas, cameraX, cameraY,
+				tokenizedCommand.missingTrailingRunes,
+				Vector2{atlas.glyphWidth * float32(len(command)), paneY},
+				color.RGBA{255, 255, 255, 255})
 		}
 
 		if len(panes) == focusedPaneIndex {
-			position := rl.NewVector2(glyphSize.X*float32(len(command)), paneY)
+			position := Vector2{atlas.glyphWidth * float32(len(command)), paneY}
 
-			rl.DrawRectangleV(position, glyphSize, rl.White)
+			drawRect(renderer, cameraX, cameraY, position, glyphSize,
+				color.RGBA{255, 255, 255, 255})
 
 			if len(tokenizedCommand.missingTrailingRunes) > 0 {
-				rl.DrawTextCodepoint(font, tokenizedCommand.missingTrailingRunes[0], position, scaledFontSize, rl.Black)
+				drawGlyph(renderer, &atlas, cameraX, cameraY,
+					tokenizedCommand.missingTrailingRunes[0], position,
+					color.RGBA{0, 0, 0, 255})
 			}
 		}
 
-		rl.EndShaderMode()
+		renderer.Present()
+	}
+}
 
-		rl.EndDrawing()
+func createGlyphAtlas(renderer *sdl.Renderer, font *ttf.Font) GlyphAtlas {
+	const glyphsPerRow = 16
+	const numGlyphs = int('~'-startGlyph) + 1
 
+	sdlGlyphWidth, sdlGlyphHeight, _ := font.StringSize("M")
+	glyphWidth, glyphHeight := int(sdlGlyphWidth), int(sdlGlyphHeight)
+
+	atlasWidth := glyphWidth * glyphsPerRow
+	atlasHeight := glyphHeight * ((numGlyphs + glyphsPerRow - 1) / glyphsPerRow)
+
+	surface, err := sdl.CreateSurface(atlasWidth, atlasHeight, sdl.PIXELFORMAT_RGBA8888)
+	if err != nil {
+		panic(err)
+	}
+	defer surface.Destroy()
+
+	surface.FillRect(nil, surface.MapRGBA(0, 0, 0, 0))
+
+	atlas := GlyphAtlas{
+		glyphs:      make([]sdl.FRect, numGlyphs),
+		glyphWidth:  float32(glyphWidth),
+		glyphHeight: float32(glyphHeight),
+	}
+
+	for i := range numGlyphs {
+		r := rune(startGlyph + i)
+		x := (i % glyphsPerRow) * glyphWidth
+		y := (i / glyphsPerRow) * glyphHeight
+
+		glyphSurface, err := font.RenderTextBlended(string(r), sdl.Color{R: 255, G: 255, B: 255, A: 255})
+		if err != nil {
+			continue
+		}
+
+		dstRect := &sdl.Rect{X: int32(x), Y: int32(y), W: glyphSurface.W, H: glyphSurface.H}
+		glyphSurface.Blit(nil, surface, dstRect)
+		glyphSurface.Destroy()
+
+		atlas.glyphs[i] = sdl.FRect{
+			X: float32(x),
+			Y: float32(y),
+			W: float32(glyphWidth),
+			H: float32(glyphHeight),
+		}
+	}
+
+	atlas.texture, err = renderer.CreateTextureFromSurface(surface)
+	if err != nil {
+		panic(err)
+	}
+
+	atlas.texture.SetBlendMode(sdl.BLENDMODE_BLEND)
+	atlas.texture.SetScaleMode(sdl.SCALEMODE_LINEAR)
+
+	return atlas
+}
+
+func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
+	command *[]rune, tokenizedCommand *tokenizeResult, errorFlashTimer *float32,
+	homeDir string, ptyInputBuffer [4]byte) {
+
+	modState := sdl.GetModState()
+	cmdPressed := (modState & sdl.KMOD_GUI) != 0
+
+	if cmdPressed {
+		switch key {
+		case sdl.K_UP:
+			*focusedPaneIndex = max(*focusedPaneIndex-1, 0)
+		case sdl.K_DOWN:
+			*focusedPaneIndex = min(*focusedPaneIndex+1, len(*panes))
+		case sdl.K_W:
+			if *focusedPaneIndex < len(*panes) {
+				*panes = slices.Delete(*panes, *focusedPaneIndex, *focusedPaneIndex+1)
+			}
+		}
+		return
+	}
+
+	if *focusedPaneIndex >= len(*panes) {
+		switch key {
+		case sdl.K_BACKSPACE:
+			if len(*command) > 0 {
+				*command = (*command)[:len(*command)-1]
+			}
+		case sdl.K_RETURN:
+			tokenize(*command, tokenizedCommand)
+			if runCommand(tokenizedCommand, panes, focusedPaneIndex, homeDir) {
+				*command = (*command)[:0]
+				tokenize(*command, tokenizedCommand)
+			} else {
+				*errorFlashTimer = 1
+			}
+		}
+		tokenize(*command, tokenizedCommand)
+	} else {
+		pane := (*panes)[*focusedPaneIndex]
+		switch key {
+		case sdl.K_BACKSPACE:
+			writeRuneToPty(&pane.pty, ptyInputBuffer, '\x7f')
+		case sdl.K_TAB:
+			writeRuneToPty(&pane.pty, ptyInputBuffer, '\t')
+		case sdl.K_RETURN:
+			writeRuneToPty(&pane.pty, ptyInputBuffer, '\r')
+		case sdl.K_ESCAPE:
+			writeRuneToPty(&pane.pty, ptyInputBuffer, '\x1b')
+		}
+	}
+}
+
+func drawRect(renderer *sdl.Renderer, cameraX, cameraY float32, pos, size Vector2, c color.RGBA) {
+	x := pos.X - cameraX
+	y := pos.Y - cameraY
+	w := size.X
+	h := size.Y
+
+	renderer.SetDrawColor(c.R, c.G, c.B, c.A)
+	renderer.RenderFillRect(&sdl.FRect{X: x, Y: y, W: w, H: h})
+}
+
+func drawGlyph(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
+	r rune, pos Vector2, c color.RGBA) {
+
+	index := int(r - startGlyph)
+
+	if index < 0 || index > len(atlas.glyphs) {
+		return
+	}
+
+	srcRect := &atlas.glyphs[index]
+
+	x := pos.X - cameraX
+	y := pos.Y - cameraY
+
+	atlas.texture.SetColorMod(c.R, c.G, c.B)
+	atlas.texture.SetAlphaMod(c.A)
+
+	dstRect := &sdl.FRect{X: x, Y: y, W: atlas.glyphWidth, H: atlas.glyphHeight}
+	renderer.RenderTexture(atlas.texture, srcRect, dstRect)
+}
+
+func drawText(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
+	text []rune, pos Vector2, c color.RGBA) {
+
+	for i, r := range text {
+		glyphPos := Vector2{pos.X + atlas.glyphWidth*float32(i), pos.Y}
+		drawGlyph(renderer, atlas, cameraX, cameraY, r, glyphPos, c)
+	}
+}
+
+func drawBorderedRect(renderer *sdl.Renderer, cameraX, cameraY float32,
+	position, size Vector2, borderWidth float32, borderColor, backgroundColor color.RGBA) {
+
+	borderOffset := Vector2{borderWidth, borderWidth}
+	borderPosition := Vector2{position.X - borderOffset.X, position.Y - borderOffset.Y}
+	borderSize := Vector2{size.X + borderOffset.X*2, size.Y + borderOffset.Y*2}
+
+	drawRect(renderer, cameraX, cameraY, borderPosition, borderSize, borderColor)
+	drawRect(renderer, cameraX, cameraY, position, size, backgroundColor)
+}
+
+func getPaneBorderColor(index, focusedIndex int) color.RGBA {
+	if index == focusedIndex {
+		return color.RGBA{135, 206, 235, 255}
+	} else {
+		return color.RGBA{211, 211, 211, 255}
 	}
 }
 
@@ -329,78 +513,61 @@ func writeRuneToPty(pty *pty, buffer [4]byte, r rune) {
 	pty.write(buffer[:size])
 }
 
-func drawBorderedRect(position, size rl.Vector2, borderWidth float32, borderColor, backgroundColor color.RGBA) {
-	borderOffset := rl.NewVector2(borderWidth, borderWidth)
-	borderPosition := rl.Vector2Subtract(position, borderOffset)
-	borderSize := rl.Vector2Add(size, rl.Vector2Scale(borderOffset, 2))
-
-	rl.DrawRectangleV(borderPosition, borderSize, borderColor)
-	rl.DrawRectangleV(position, size, backgroundColor)
-}
-
-func getPaneBorderColor(index, focusedIndex int) color.RGBA {
-	if index == focusedIndex {
-		return rl.SkyBlue
-	} else {
-		return rl.LightGray
-	}
-}
-
-func isKeyPressedOrRepeated(key int32) bool {
-	return rl.IsKeyPressed(key) || rl.IsKeyPressedRepeat(key)
-}
-
-func terminalColorToColor(color uint32) color.RGBA {
-	switch color {
+func terminalColorToColor(c uint32) color.RGBA {
+	switch c {
 	case Background:
-		return rl.Black
+		return color.RGBA{0, 0, 0, 255}
 	case Foreground:
-		return rl.White
+		return color.RGBA{255, 255, 255, 255}
 	case Red:
-		return rl.Red
+		return color.RGBA{255, 0, 0, 255}
 	case Green:
-		return rl.Green
+		return color.RGBA{0, 255, 0, 255}
 	case Yellow:
-		return rl.Yellow
+		return color.RGBA{255, 255, 0, 255}
 	case Blue:
-		return rl.Blue
+		return color.RGBA{0, 0, 255, 255}
 	case Magenta:
-		return rl.Magenta
+		return color.RGBA{255, 0, 255, 255}
 	case Cyan:
-		return rl.SkyBlue
+		return color.RGBA{135, 206, 235, 255}
 	case BrightBackground:
-		return brightenColor(rl.Black)
+		return brightenColor(color.RGBA{0, 0, 0, 255})
 	case BrightForeground:
-		return brightenColor(rl.White)
+		return brightenColor(color.RGBA{255, 255, 255, 255})
 	case BrightRed:
-		return brightenColor(rl.Red)
+		return brightenColor(color.RGBA{255, 0, 0, 255})
 	case BrightGreen:
-		return brightenColor(rl.Green)
+		return brightenColor(color.RGBA{0, 255, 0, 255})
 	case BrightYellow:
-		return brightenColor(rl.Yellow)
+		return brightenColor(color.RGBA{255, 255, 0, 255})
 	case BrightBlue:
-		return brightenColor(rl.Blue)
+		return brightenColor(color.RGBA{0, 0, 255, 255})
 	case BrightMagenta:
-		return brightenColor(rl.Magenta)
+		return brightenColor(color.RGBA{255, 0, 255, 255})
 	case BrightCyan:
-		return brightenColor(rl.SkyBlue)
+		return brightenColor(color.RGBA{135, 206, 235, 255})
 	default:
-		r := (color >> 16) & 0xFF
-		g := (color >> 8) & 0xFF
-		b := color & 0xFF
+		r := (c >> 16) & 0xFF
+		g := (c >> 8) & 0xFF
+		b := c & 0xFF
 
-		return rl.NewColor(uint8(r), uint8(g), uint8(b), 255)
+		return color.RGBA{uint8(r), uint8(g), uint8(b), 255}
 	}
 }
 
-func brightenColor(color color.RGBA) color.RGBA {
-	r := brightenColorComponent(color.R)
-	g := brightenColorComponent(color.G)
-	b := brightenColorComponent(color.B)
+func brightenColor(c color.RGBA) color.RGBA {
+	r := brightenColorComponent(c.R)
+	g := brightenColorComponent(c.G)
+	b := brightenColorComponent(c.B)
 
-	return rl.NewColor(r, g, b, color.A)
+	return color.RGBA{r, g, b, c.A}
 }
 
 func brightenColorComponent(x uint8) uint8 {
 	return uint8((int(x)*2 + 255) / 3)
+}
+
+func lerp(a, b, t float32) float32 {
+	return a + (b-a)*t
 }

@@ -64,12 +64,16 @@ func (p *pane) handleOutput() {
 		p.parser = vte.NewParser(&p.emulator)
 	}
 
-	select {
-	case output := <-p.output:
-		for _, b := range output {
-			p.parser.Advance(b)
+loop:
+	for {
+		select {
+		case output := <-p.output:
+			for _, b := range output {
+				p.parser.Advance(b)
+			}
+		default:
+			break loop
 		}
-	default:
 	}
 
 	input := p.emulator.input.Bytes()
