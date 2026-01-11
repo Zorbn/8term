@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math"
 
 	"github.com/danielgatis/go-vte"
 )
@@ -91,6 +92,7 @@ type emulator struct {
 	usedHeight                        int
 	isInAlternateBuffer               bool
 	cursorX, cursorY                  int
+	scrollTop, scrollBottom           int
 	foregroundColor, backgroundColor  uint32
 	areColorsBright, areColorsSwapped bool
 	input                             bytes.Buffer
@@ -103,6 +105,7 @@ func newEmulator() emulator {
 	usedHeight := 1
 	isInAlternateBuffer := false
 	cursorX, cursorY := 0, 0
+	scrollTop, scrollBottom := 0, emulatorRows-1
 	foregroundColor, backgroundColor := Foreground, Background
 	areColorsBright, areColorsSwapped := false, false
 
@@ -114,6 +117,7 @@ func newEmulator() emulator {
 		usedHeight,
 		isInAlternateBuffer,
 		cursorX, cursorY,
+		scrollTop, scrollBottom,
 		foregroundColor, backgroundColor,
 		areColorsBright, areColorsSwapped,
 		input,
@@ -154,15 +158,45 @@ func (e *emulator) setRune(r rune, x int, y int) {
 func (e *emulator) newlineCursor() {
 	e.cursorY++
 
-	if e.cursorY >= emulatorRows && !e.isInAlternateBuffer {
-		e.scrollContentUp()
+	if e.cursorY > e.scrollBottom && !e.isInAlternateBuffer {
+		e.scrollContentUp(e.scrollTop, e.scrollBottom)
 	}
 
-	e.cursorY = min(e.cursorY, emulatorRows-1)
+	e.cursorY = min(e.cursorY, e.scrollBottom)
 }
 
-func (e *emulator) scrollContentUp() {
-	copy(e.grid.runes[0:], e.grid.runes[emulatorCols:])
+func (e *emulator) reverseNewlineCursor() {
+	e.cursorY--
+
+	if e.cursorY < e.scrollTop && !e.isInAlternateBuffer {
+		e.scrollContentUp(e.scrollTop, e.scrollBottom)
+	}
+
+	e.cursorY = max(e.cursorY, e.scrollTop)
+}
+
+func (e *emulator) scrollContentUp(top, bottom int) {
+	bottom = max(bottom, top+1)
+
+	dst := top * emulatorCols
+	srcStart := dst + emulatorCols
+	srcEnd := (bottom + 1) * emulatorCols
+
+	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
+	copy(e.grid.foregroundColors[dst:], e.grid.foregroundColors[srcStart:srcEnd])
+	copy(e.grid.backgroundColors[dst:], e.grid.backgroundColors[srcStart:srcEnd])
+}
+
+func (e *emulator) scrollContentDown(top, bottom int) {
+	bottom = max(bottom, top+1)
+
+	srcStart := top * emulatorCols
+	srcEnd := bottom * emulatorCols
+	dst := srcStart + emulatorCols
+
+	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
+	copy(e.grid.foregroundColors[dst:], e.grid.foregroundColors[srcStart:srcEnd])
+	copy(e.grid.backgroundColors[dst:], e.grid.backgroundColors[srcStart:srcEnd])
 }
 
 func (e *emulator) Print(r rune) {
@@ -216,7 +250,6 @@ func (e *emulator) Hook(params [][]uint16, intermediates []byte, ignore bool, r 
 func (e *emulator) OscDispatch(params [][]byte, bellTerminated bool) {
 	if isDebug {
 		fmt.Printf("[OscDispatch] params=%v, bellTerminated=%v\n", params, bellTerminated)
-
 	}
 }
 
@@ -248,6 +281,9 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 				}
 			}
 		}
+	case 'r':
+		e.scrollTop = getRowsParam(params, 0, 1)
+		e.scrollBottom = getRowsParam(params, 1, math.MaxInt)
 	case 'A':
 		e.cursorY = max(e.cursorY-getParam(params, 0, 1), 0)
 	case 'B':
@@ -304,6 +340,26 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		for x := startX; x < endX; x++ {
 			e.setRune(' ', x, e.cursorY)
 		}
+	case 'M':
+		top := max(e.scrollTop, e.cursorY)
+
+		for range getParam(params, 0, 1) {
+			e.scrollContentUp(top, e.scrollBottom)
+		}
+	case 'L':
+		top := max(e.scrollTop, e.cursorY)
+
+		for range getParam(params, 0, 1) {
+			e.scrollContentDown(top, e.scrollBottom)
+		}
+	case 'S':
+		for range getParam(params, 0, 1) {
+			e.scrollContentUp(e.scrollTop, e.scrollBottom)
+		}
+	case 'T':
+		for range getParam(params, 0, 1) {
+			e.scrollContentDown(e.scrollTop, e.scrollBottom)
+		}
 	default:
 		if isDebug {
 			log.Printf("Unhandled CSI params=%v, intermediates=%v, ignore=%v, r=%c\n", params, intermediates, ignore, r)
@@ -312,9 +368,13 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 }
 
 func (e *emulator) EscDispatch(intermediates []byte, ignore bool, b byte) {
-	if isDebug {
-		fmt.Printf("[EscDispatch] intermediates=%v, ignore=%v, byte=%02x\n", intermediates, ignore, b)
-
+	switch b {
+	case 'M':
+		e.reverseNewlineCursor()
+	default:
+		if isDebug {
+			fmt.Printf("[EscDispatch] intermediates=%v, ignore=%v, byte=%02x\n", intermediates, ignore, b)
+		}
 	}
 }
 
