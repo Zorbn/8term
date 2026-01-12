@@ -185,6 +185,8 @@ func (e *emulator) scrollContentUp(top, bottom int) {
 	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
 	copy(e.grid.foregroundColors[dst:], e.grid.foregroundColors[srcStart:srcEnd])
 	copy(e.grid.backgroundColors[dst:], e.grid.backgroundColors[srcStart:srcEnd])
+
+	e.clearScrolledOutRow(bottom)
 }
 
 func (e *emulator) scrollContentDown(top, bottom int) {
@@ -197,6 +199,18 @@ func (e *emulator) scrollContentDown(top, bottom int) {
 	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
 	copy(e.grid.foregroundColors[dst:], e.grid.foregroundColors[srcStart:srcEnd])
 	copy(e.grid.backgroundColors[dst:], e.grid.backgroundColors[srcStart:srcEnd])
+
+	e.clearScrolledOutRow(top)
+}
+
+func (e *emulator) clearScrolledOutRow(y int) {
+	for x := range emulatorCols {
+		i := y*emulatorCols + x
+
+		e.grid.runes[i] = ' '
+		e.grid.foregroundColors[i] = Foreground
+		e.grid.backgroundColors[i] = Background
+	}
 }
 
 func (e *emulator) Print(r rune) {
