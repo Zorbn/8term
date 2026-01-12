@@ -103,6 +103,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 				running = false
 			case sdl.EVENT_TEXT_INPUT:
 				textEvent := event.TextInputEvent()
+
 				if focusedPaneIndex >= len(panes) {
 					for _, r := range textEvent.Text {
 						if r != 0 {
@@ -112,9 +113,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 				} else {
 					pane := panes[focusedPaneIndex]
 					for _, r := range textEvent.Text {
-						if r != 0 {
-							writeRuneToPty(&pane.pty, r)
-						}
+						writeRuneToPty(&pane.pty, r)
 					}
 				}
 			case sdl.EVENT_KEY_DOWN:

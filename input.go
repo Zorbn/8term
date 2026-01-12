@@ -14,6 +14,7 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 
 	modState := sdl.GetModState()
 	cmdPressed := (modState & sdl.KMOD_GUI) != 0
+	ctrlPressed := (modState & sdl.KMOD_CTRL) != 0
 
 	if cmdPressed {
 		switch key {
@@ -45,18 +46,26 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 			}
 		}
 		tokenize(*command, tokenizedCommand)
-	} else {
-		pane := (*panes)[*focusedPaneIndex]
-		switch key {
-		case sdl.K_BACKSPACE:
-			writeRuneToPty(&pane.pty, '\x7f')
-		case sdl.K_TAB:
-			writeRuneToPty(&pane.pty, '\t')
-		case sdl.K_RETURN:
-			writeRuneToPty(&pane.pty, '\r')
-		case sdl.K_ESCAPE:
-			writeRuneToPty(&pane.pty, '\x1b')
-		}
+
+		return
+	}
+
+	pane := (*panes)[*focusedPaneIndex]
+
+	if ctrlPressed && (key >= sdl.K_A && key <= sdl.K_Z) {
+		pane.pty.write([]byte{byte(key) & 0x1f})
+		return
+	}
+
+	switch key {
+	case sdl.K_BACKSPACE:
+		writeRuneToPty(&pane.pty, '\x7f')
+	case sdl.K_TAB:
+		writeRuneToPty(&pane.pty, '\t')
+	case sdl.K_RETURN:
+		writeRuneToPty(&pane.pty, '\r')
+	case sdl.K_ESCAPE:
+		writeRuneToPty(&pane.pty, '\x1b')
 	}
 }
 
