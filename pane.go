@@ -56,10 +56,11 @@ func (p *pane) run() {
 		}
 
 		p.pty.tty.Close()
+		close(p.output)
 	}()
 }
 
-func (p *pane) handleOutput() {
+func (p *pane) handleOutput() bool {
 	if p.parser == nil {
 		p.parser = vte.NewParser(&p.emulator)
 	}
@@ -67,7 +68,11 @@ func (p *pane) handleOutput() {
 loop:
 	for {
 		select {
-		case output := <-p.output:
+		case output, ok := <-p.output:
+			if !ok {
+				return false
+			}
+
 			for _, b := range output {
 				p.parser.Advance(b)
 			}
@@ -79,4 +84,6 @@ loop:
 	input := p.emulator.input.Bytes()
 	p.emulator.input.Reset()
 	p.pty.write(input)
+
+	return true
 }

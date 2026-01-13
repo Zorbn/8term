@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	"os"
+	"slices"
 
 	"github.com/Zyko0/go-sdl3/bin/binsdl"
 	"github.com/Zyko0/go-sdl3/bin/binttf"
@@ -127,9 +128,24 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 
 		var paneY float32 = 0
 		for i, pane := range panes {
-			pane.handleOutput()
 			if i < focusedPaneIndex {
-				paneY += atlas.glyphHeight * float32(pane.emulator.usedHeight+1)
+				paneY += getPaneHeight(pane, atlas)
+			}
+
+			isRunning := pane.handleOutput()
+
+			if pane.emulator.usedHeight > 0 {
+				continue
+			}
+
+			if isRunning {
+				continue
+			}
+
+			panes = slices.Delete(panes, i, i+1)
+
+			if focusedPaneIndex > i {
+				focusedPaneIndex--
 			}
 		}
 
@@ -189,7 +205,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas,
 				Vector2{0, paneY}, Vector2{paneWidth, paneHeight},
 				borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 		}
-		paneY += atlas.glyphHeight * float32(emulator.usedHeight+1)
+		paneY += getPaneHeight(pane, atlas)
 	}
 
 	paneY = 0
@@ -231,7 +247,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas,
 					color.RGBA{0, 0, 0, 255})
 			}
 		}
-		paneY += atlas.glyphHeight * float32(emulator.usedHeight+1)
+		paneY += getPaneHeight(pane, atlas)
 	}
 
 	borderColor := getPaneBorderColor(len(panes), focusedPaneIndex)

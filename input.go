@@ -19,9 +19,13 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 	if cmdPressed {
 		switch key {
 		case sdl.K_UP:
-			*focusedPaneIndex = max(*focusedPaneIndex-1, 0)
+			for needsMove := true; shouldMove(needsMove, panes, focusedPaneIndex, -1); needsMove = false {
+				*focusedPaneIndex--
+			}
 		case sdl.K_DOWN:
-			*focusedPaneIndex = min(*focusedPaneIndex+1, len(*panes))
+			for needsMove := true; shouldMove(needsMove, panes, focusedPaneIndex, 1); needsMove = false {
+				*focusedPaneIndex++
+			}
 		case sdl.K_X:
 			if *focusedPaneIndex < len(*panes) {
 				*panes = slices.Delete(*panes, *focusedPaneIndex, *focusedPaneIndex+1)
@@ -67,6 +71,22 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 	case sdl.K_ESCAPE:
 		writeRuneToPty(&pane.pty, '\x1b')
 	}
+}
+
+func shouldMove(needsMove bool, panes *[]*pane, focusedPaneIndex *int, dir int) bool {
+	canMove := (dir > 0 && *focusedPaneIndex < len(*panes)) || (dir < 0 && *focusedPaneIndex > 0)
+
+	if !canMove {
+		return false
+	}
+
+	if needsMove {
+		return true
+	}
+
+	isPaneEmpty := (*panes)[*focusedPaneIndex].emulator.usedHeight == 0
+
+	return isPaneEmpty
 }
 
 func runCommand(tokenizedCommand *tokenizeResult, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {

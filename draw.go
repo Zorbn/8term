@@ -102,6 +102,16 @@ func getPaneBorderWidth(index, focusedIndex int, paneBorderWidth, time float32) 
 	}
 }
 
+func getPaneHeight(pane *pane, atlas *GlyphAtlas) float32 {
+	emulator := &pane.emulator
+
+	if emulator.usedHeight == 0 {
+		return 0
+	}
+
+	return atlas.glyphHeight * float32(emulator.usedHeight+1)
+}
+
 func terminalColorToColor(c uint32) color.RGBA {
 	switch c {
 	case Background:

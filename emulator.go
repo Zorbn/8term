@@ -102,7 +102,7 @@ func newEmulator() emulator {
 	grid := newGrid()
 	otherGrid := newGrid()
 
-	usedHeight := 1
+	usedHeight := 0
 	isInAlternateBuffer := false
 	cursorX, cursorY := 0, 0
 	scrollTop, scrollBottom := 0, emulatorRows-1
