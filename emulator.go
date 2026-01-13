@@ -130,13 +130,18 @@ func (e *emulator) writeRune(r rune) {
 		e.newlineCursor()
 	}
 
-	e.setRune(r, e.cursorX, e.cursorY)
+	e.setRuneAt(r, e.cursorX, e.cursorY)
 	e.cursorX++
 	e.usedHeight = max(e.usedHeight, e.cursorY+1)
 }
 
-func (e *emulator) setRune(r rune, x int, y int) {
+func (e *emulator) setRuneAt(r rune, x int, y int) {
 	index := y*emulatorCols + x
+
+	e.setRune(r, index)
+}
+
+func (e *emulator) setRune(r rune, index int) {
 
 	e.grid.runes[index] = r
 
@@ -148,7 +153,6 @@ func (e *emulator) setRune(r rune, x int, y int) {
 
 	if e.areColorsBright {
 		foregroundColor = brightenTerminalColor(foregroundColor)
-		backgroundColor = brightenTerminalColor(backgroundColor)
 	}
 
 	e.grid.foregroundColors[index] = foregroundColor
@@ -327,7 +331,7 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		}
 
 		for x := startX; x < endX; x++ {
-			e.setRune(' ', x, e.cursorY)
+			e.setRuneAt(' ', x, e.cursorY)
 		}
 	case 'J':
 		startIndex := 0
@@ -345,14 +349,14 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		}
 
 		for i := startIndex; i < endIndex; i++ {
-			e.grid.runes[i] = ' '
+			e.setRune(' ', i)
 		}
 	case 'X':
 		startX := e.cursorX
 		endX := min(e.cursorX+getParam(params, 0, 1), emulatorCols)
 
 		for x := startX; x < endX; x++ {
-			e.setRune(' ', x, e.cursorY)
+			e.setRuneAt(' ', x, e.cursorY)
 		}
 	case 'M':
 		top := max(e.scrollTop, e.cursorY)
