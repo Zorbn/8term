@@ -71,8 +71,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 	cameraMargin := atlas.glyphHeight * 3
 
 	var panes []*pane
-	var command []rune
-	var tokenizedCommand tokenizeResult
+	var command command
 	focusedPaneIndex := 0
 
 	os.Setenv("TERM", "xterm-256color")
@@ -107,9 +106,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 
 				if focusedPaneIndex >= len(panes) {
 					for _, r := range textEvent.Text {
-						if r != 0 {
-							command = append(command, r)
-						}
+						command.append(r)
 					}
 				} else {
 					pane := panes[focusedPaneIndex]
@@ -119,8 +116,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 				}
 			case sdl.EVENT_KEY_DOWN:
 				keyEvent := event.KeyboardEvent()
-				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &tokenizedCommand,
-					&errorFlashTimer, homeDir)
+				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &errorFlashTimer, homeDir)
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
 			}
@@ -170,17 +166,13 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 		}
 
 		draw(renderer, atlas, panes, focusedPaneIndex, cameraY, windowWidth, time,
-			errorFlashTimer, command, tokenizedCommand, paneBorderWidth, glyphSize)
+			errorFlashTimer, &command, paneBorderWidth, glyphSize)
 
 		renderer.Present()
 	}
 }
 
-func draw(renderer *sdl.Renderer, atlas *GlyphAtlas,
-	panes []*pane, focusedPaneIndex int,
-	cameraY, windowWidth, time, errorFlashTimer float32,
-	command []rune, tokenizedCommand tokenizeResult,
-	paneBorderWidth float32, glyphSize Vector2) {
+func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneIndex int, cameraY, windowWidth, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
 
 	cameraX := (atlas.glyphWidth*float32(emulatorCols) - windowWidth) / 2
 
@@ -274,8 +266,10 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas,
 	commandX += drawString(renderer, atlas, cameraX, cameraY, "> ",
 		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
 
-	commandX += drawText(renderer, atlas, cameraX, cameraY, command,
+	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes,
 		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
+
+	tokenizedCommand := command.tokenize()
 
 	if len(tokenizedCommand.missingTrailingRunes) > 0 {
 		drawText(renderer, atlas, cameraX, cameraY,

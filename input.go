@@ -8,9 +8,7 @@ import (
 	"github.com/Zyko0/go-sdl3/sdl"
 )
 
-func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
-	command *[]rune, tokenizedCommand *tokenizeResult, errorFlashTimer *float32,
-	homeDir string) {
+func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, command *command, errorFlashTimer *float32, homeDir string) {
 
 	modState := sdl.GetModState()
 	cmdPressed := (modState & sdl.KMOD_GUI) != 0
@@ -37,19 +35,16 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane,
 	if *focusedPaneIndex >= len(*panes) {
 		switch key {
 		case sdl.K_BACKSPACE:
-			if len(*command) > 0 {
-				*command = (*command)[:len(*command)-1]
-			}
+			command.pop()
 		case sdl.K_RETURN:
-			tokenize(*command, tokenizedCommand)
+			tokenizedCommand := command.tokenize()
+
 			if runCommand(tokenizedCommand, panes, focusedPaneIndex, homeDir) {
-				*command = (*command)[:0]
-				tokenize(*command, tokenizedCommand)
+				command.clear()
 			} else {
 				*errorFlashTimer = 1
 			}
 		}
-		tokenize(*command, tokenizedCommand)
 
 		return
 	}
