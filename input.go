@@ -39,7 +39,7 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 		case sdl.K_RETURN:
 			tokenizedCommand := command.tokenize()
 
-			if runCommand(tokenizedCommand, panes, focusedPaneIndex, homeDir) {
+			if tokenizedCommand.didSucceed && runCommand(tokenizedCommand, panes, focusedPaneIndex, homeDir) {
 				command.clear()
 			} else {
 				*errorFlashTimer = 1
@@ -85,37 +85,34 @@ func shouldMove(needsMove bool, panes *[]*pane, focusedPaneIndex *int, dir int) 
 }
 
 func runCommand(tokenizedCommand *tokenizeResult, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
-	var stringTokens []string
-
-	for _, t := range tokenizedCommand.tokens {
-		stringTokens = append(stringTokens, string(t))
-	}
-
 	if len(tokenizedCommand.tokens) == 0 {
 		return false
 	}
 
-	switch stringTokens[0] {
+	name := string(tokenizedCommand.tokens[0])
+
+	switch name {
 	case "cd":
-		if len(stringTokens) > 2 {
+		if len(tokenizedCommand.tokens) > 2 {
 			return false
 		}
 
 		path := homeDir
 
-		if len(stringTokens) > 1 {
-			path = stringTokens[1]
+		if len(tokenizedCommand.tokens) > 1 {
+			path = string(tokenizedCommand.tokens[1])
 		}
 
 		os.Chdir(path)
 	default:
-		pane, err := newPane(stringTokens[0], stringTokens[1:]...)
+		ast, err := parse(tokenizedCommand.tokens)
 
 		if err != nil {
 			return false
 		}
 
-		pane.run()
+		pane := newPane()
+		pane.run(ast)
 
 		*panes = append(*panes, &pane)
 		*focusedPaneIndex++

@@ -1,17 +1,21 @@
 package main
 
-import "unicode"
+import (
+	"unicode"
+)
 
 type token []rune
 
 type tokenizeResult struct {
 	tokens               []token
 	missingTrailingRunes []rune
+	didSucceed           bool
 }
 
 func tokenize(text []rune, result *tokenizeResult) {
 	result.tokens = result.tokens[:0]
 	result.missingTrailingRunes = result.missingTrailingRunes[:0]
+	result.didSucceed = true
 
 	var t token
 	r := ' '
@@ -39,7 +43,16 @@ func tokenize(text []rune, result *tokenizeResult) {
 				result.missingTrailingRunes = append(result.missingTrailingRunes, '\'')
 			}
 		default:
-			t, text = tokenizeIdentifier(text, r)
+			if isRuneSpecial(r) {
+				didSucceed := false
+				t, text, didSucceed = tokenizeOp(text, r)
+
+				if !didSucceed {
+					result.didSucceed = false
+				}
+			} else {
+				t, text = tokenizeIdentifier(text, r)
+			}
 		}
 
 		result.tokens = append(result.tokens, t)
@@ -84,11 +97,11 @@ func tokenizeIdentifier(text []rune, firstRune rune) (token, []rune) {
 	r := firstRune
 
 	for len(text) > 0 {
-		r, text = nextRune(text)
-
-		if unicode.IsSpace(r) || r == '"' || r == '\'' {
+		if unicode.IsSpace(text[0]) || isRuneSpecial(text[0]) {
 			return t, text
 		}
+
+		r, text = nextRune(text)
 
 		switch r {
 		case '"', '\'':
@@ -101,6 +114,35 @@ func tokenizeIdentifier(text []rune, firstRune rune) (token, []rune) {
 	return t, text
 }
 
+func tokenizeOp(text []rune, firstRune rune) (token, []rune, bool) {
+	var secondRune rune
+
+	switch firstRune {
+	case ';':
+		return token{firstRune}, text, true
+	case '|':
+		if len(text) > 0 && text[0] == '|' {
+			secondRune, text = nextRune(text)
+			return token{firstRune, secondRune}, text, true
+		}
+
+		return token{firstRune}, text, false
+	case '&':
+		if len(text) > 0 && text[0] == '&' {
+			secondRune, text = nextRune(text)
+			return token{firstRune, secondRune}, text, true
+		}
+
+		return token{firstRune}, text, false
+	default:
+		panic("Unexpected rune in op")
+	}
+}
+
 func nextRune(text []rune) (rune, []rune) {
 	return text[0], text[1:]
+}
+
+func isRuneSpecial(r rune) bool {
+	return r == '"' || r == '\'' || r == ';' || r == '|' || r == '&'
 }

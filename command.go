@@ -34,6 +34,8 @@ func (c *command) tokenize() *tokenizeResult {
 		return &c.tokenized
 	}
 
+	c.isDirty = false
+
 	tokenize(c.runes, &c.tokenized)
 	return &c.tokenized
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"fmt"
 	"io"
 	"log"
 
@@ -16,55 +17,65 @@ type pane struct {
 	emulator emulator
 }
 
-func newPane(name string, arg ...string) (pane, error) {
-	pty, err := newPty(name, arg...)
-
-	if err != nil {
-		return pane{}, err
-	}
-
+func newPane() pane {
 	buffer := make([]byte, 4096)
 	output := make(chan []byte)
 	emulator := newEmulator()
-	var parser *vte.Parser
 
 	return pane{
-		pty,
+		pty{},
 		buffer,
 		output,
-		parser,
+		nil,
 		emulator,
-	}, nil
+	}
 }
 
-func (p *pane) run() {
-	go func() {
-		for {
-			outputLen, err := p.pty.read(p.buffer)
-
-			if err == io.EOF {
-				break
-			} else if err != nil {
-				log.Fatal(err)
-			}
-
-			// TODO: Use sync pool to avoid excess allocations.
-			output := make([]byte, outputLen)
-			copy(output, p.buffer[:outputLen])
-
-			p.output <- output
-		}
-
-		p.pty.tty.Close()
-		close(p.output)
-	}()
-}
-
-func (p *pane) handleOutput() bool {
+func (p *pane) run(ast astNode) error {
 	if p.parser == nil {
 		p.parser = vte.NewParser(&p.emulator)
 	}
 
+	go func() {
+		ast.exec(p)
+		close(p.output)
+	}()
+
+	return nil
+}
+
+func (p *pane) runToExit(name string, args ...string) int {
+	var err error
+	p.pty, err = newPty(name, args...)
+
+	if err != nil {
+		p.output <- fmt.Appendf([]byte{}, "\x1b[0;31mUnable to run program: %s\x1b[m", name)
+		return 1
+	}
+
+	for {
+		outputLen, err := p.pty.read(p.buffer)
+
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			log.Fatal(err)
+		}
+
+		// TODO: Use sync pool to avoid excess allocations.
+		output := make([]byte, outputLen)
+		copy(output, p.buffer[:outputLen])
+
+		p.output <- output
+	}
+
+	p.pty.tty.Close()
+	p.pty.cmd.Wait()
+
+	return p.pty.cmd.ProcessState.ExitCode()
+}
+
+func (p *pane) handleOutput() bool {
 loop:
 	for {
 		select {

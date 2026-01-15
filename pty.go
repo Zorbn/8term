@@ -12,8 +12,8 @@ type pty struct {
 	tty *os.File
 }
 
-func newPty(name string, arg ...string) (pty, error) {
-	cmd := exec.Command(name, arg...)
+func newPty(name string, args ...string) (pty, error) {
+	cmd := exec.Command(name, args...)
 
 	tty, err := cpty.StartWithSize(cmd, &cpty.Winsize{
 		Rows: uint16(emulatorRows),
@@ -31,6 +31,10 @@ func newPty(name string, arg ...string) (pty, error) {
 }
 
 func (p *pty) write(input []byte) {
+	if p.tty == nil {
+		return
+	}
+
 	p.tty.Write(input)
 }
 
