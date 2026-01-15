@@ -6,6 +6,9 @@ import (
 
 type token []rune
 
+// TODO: Make this the tokenizer that has methods, like how parser works.
+// TODO: We're generally converting tokens to strings, should tokens be strings to start with?
+// TODO: There's no way to distinguish between && (operator) and "&&" (string).
 type tokenizeResult struct {
 	tokens               []token
 	missingTrailingRunes []rune

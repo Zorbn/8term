@@ -22,6 +22,8 @@ type pipeNode struct {
 	children []*callNode
 }
 
+// TODO: Support parens correctly.
+// TODO: Also track missingTrailingRunes here.
 type parser struct {
 	tokens []token
 	pos    int
@@ -48,9 +50,11 @@ func (p *parser) peek() string {
 
 func (p *parser) consume() string {
 	s := p.peek()
+
 	if p.pos < len(p.tokens) {
 		p.pos++
 	}
+
 	return s
 }
 
@@ -59,52 +63,65 @@ func (p *parser) match(s string) bool {
 		p.consume()
 		return true
 	}
+
 	return false
 }
 
 func (p *parser) parseSequence() (astNode, error) {
 	left, err := p.parseLogic()
+
 	if err != nil {
 		return nil, err
 	}
 
 	for p.match(";") {
+
 		if p.peek() == "" {
 			break
 		}
+
 		right, err := p.parseLogic()
+
 		if err != nil {
 			return nil, err
 		}
+
 		left = &binaryNode{op: ";", left: left, right: right}
 	}
+
 	return left, nil
 }
 
 func (p *parser) parseLogic() (astNode, error) {
 	left, err := p.parsePipe()
+
 	if err != nil {
 		return nil, err
 	}
 
 	for {
 		op := p.peek()
+
 		if op == "&&" || op == "||" {
 			p.consume()
 			right, err := p.parsePipe()
+
 			if err != nil {
 				return nil, err
 			}
+
 			left = &binaryNode{op: op, left: left, right: right}
 		} else {
 			break
 		}
 	}
+
 	return left, nil
 }
 
 func (p *parser) parsePipe() (astNode, error) {
 	first, err := p.parseCall()
+
 	if err != nil {
 		return nil, err
 	}
@@ -114,27 +131,35 @@ func (p *parser) parsePipe() (astNode, error) {
 	}
 
 	children := []*callNode{first}
+
 	for p.match("|") {
 		next, err := p.parseCall()
+
 		if err != nil {
 			return nil, err
 		}
+
 		children = append(children, next)
 	}
+
 	return &pipeNode{children: children}, nil
 }
 
 func (p *parser) parseTerm() (astNode, error) {
 	if p.match("(") {
 		node, err := p.parseSequence()
+
 		if err != nil {
 			return nil, err
 		}
+
 		if !p.match(")") {
 			return nil, errors.New("expected ')'")
 		}
+
 		return node, nil
 	}
+
 	return p.parseCall()
 }
 
@@ -142,16 +167,20 @@ func (p *parser) parseCall() (*callNode, error) {
 	if isOperator(p.peek()) {
 		return nil, errors.New("expected command, found " + p.peek())
 	}
+
 	if p.peek() == "" {
 		return nil, errors.New("unexpected end of input")
 	}
 
 	var args []string
+
 	for {
 		tok := p.peek()
+
 		if tok == "" || isOperator(tok) || tok == ")" {
 			break
 		}
+
 		args = append(args, p.consume())
 	}
 
@@ -167,5 +196,6 @@ func isOperator(s string) bool {
 	case ";", "&&", "||", "|", "(", ")":
 		return true
 	}
+
 	return false
 }
