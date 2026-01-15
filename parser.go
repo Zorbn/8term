@@ -1,8 +1,6 @@
 package main
 
-import (
-	"errors"
-)
+import "errors"
 
 type astNode interface {
 	exec(pane *pane) int
@@ -22,29 +20,37 @@ type pipeNode struct {
 	children []*callNode
 }
 
-// TODO: Support parens correctly.
-// TODO: Also track missingTrailingRunes here.
 type parser struct {
-	tokens []token
-	pos    int
+	tokens               []token
+	pos                  int
+	missingTrailingRunes []rune
+	errors               []error
 }
 
-func parse(tokens []token) (astNode, error) {
-	p := &parser{tokens: tokens}
-	node, err := p.parseSequence()
-	if err != nil {
-		return nil, err
-	}
+func (p *parser) parse(tokens []token) astNode {
+	p.tokens = tokens
+	p.pos = 0
+	p.missingTrailingRunes = p.missingTrailingRunes[:0]
+	p.errors = p.errors[:0]
+
+	node := p.parseSequence()
+
 	if p.pos < len(p.tokens) {
-		return nil, errors.New("unexpected token: " + p.peek())
+		p.error("Unexpected token: " + p.peek())
 	}
-	return node, nil
+
+	return node
+}
+
+func (p *parser) error(text string) {
+	p.errors = append(p.errors, errors.New(text))
 }
 
 func (p *parser) peek() string {
 	if p.pos >= len(p.tokens) {
 		return ""
 	}
+
 	return string(p.tokens[p.pos])
 }
 
@@ -67,12 +73,8 @@ func (p *parser) match(s string) bool {
 	return false
 }
 
-func (p *parser) parseSequence() (astNode, error) {
-	left, err := p.parseLogic()
-
-	if err != nil {
-		return nil, err
-	}
+func (p *parser) parseSequence() astNode {
+	left := p.parseLogic()
 
 	for p.match(";") {
 
@@ -80,35 +82,22 @@ func (p *parser) parseSequence() (astNode, error) {
 			break
 		}
 
-		right, err := p.parseLogic()
-
-		if err != nil {
-			return nil, err
-		}
-
+		right := p.parseLogic()
 		left = &binaryNode{op: ";", left: left, right: right}
 	}
 
-	return left, nil
+	return left
 }
 
-func (p *parser) parseLogic() (astNode, error) {
-	left, err := p.parsePipe()
-
-	if err != nil {
-		return nil, err
-	}
+func (p *parser) parseLogic() astNode {
+	left := p.parseTerm()
 
 	for {
 		op := p.peek()
 
 		if op == "&&" || op == "||" {
 			p.consume()
-			right, err := p.parsePipe()
-
-			if err != nil {
-				return nil, err
-			}
+			right := p.parseTerm()
 
 			left = &binaryNode{op: op, left: left, right: right}
 		} else {
@@ -116,84 +105,72 @@ func (p *parser) parseLogic() (astNode, error) {
 		}
 	}
 
-	return left, nil
+	return left
 }
 
-func (p *parser) parsePipe() (astNode, error) {
-	first, err := p.parseCall()
+func (p *parser) parseTerm() astNode {
+	if p.match("(") {
+		node := p.parseSequence()
 
-	if err != nil {
-		return nil, err
+		if !p.match(")") {
+			p.missingTrailingRunes = append(p.missingTrailingRunes, ')')
+		}
+
+		return node
 	}
 
+	return p.parsePipe()
+}
+
+func (p *parser) parsePipe() astNode {
+	first := p.parseCall()
+
 	if p.peek() != "|" {
-		return first, nil
+		return first
 	}
 
 	children := []*callNode{first}
 
 	for p.match("|") {
-		next, err := p.parseCall()
-
-		if err != nil {
-			return nil, err
-		}
-
+		next := p.parseCall()
 		children = append(children, next)
 	}
 
-	return &pipeNode{children: children}, nil
+	return &pipeNode{children: children}
 }
 
-func (p *parser) parseTerm() (astNode, error) {
-	if p.match("(") {
-		node, err := p.parseSequence()
-
-		if err != nil {
-			return nil, err
-		}
-
-		if !p.match(")") {
-			return nil, errors.New("expected ')'")
-		}
-
-		return node, nil
-	}
-
-	return p.parseCall()
-}
-
-func (p *parser) parseCall() (*callNode, error) {
-	if isOperator(p.peek()) {
-		return nil, errors.New("expected command, found " + p.peek())
-	}
-
+func (p *parser) parseCall() *callNode {
 	if p.peek() == "" {
-		return nil, errors.New("unexpected end of input")
+		p.error("Unexpected end of input")
+		return &callNode{}
 	}
 
-	var args []string
+	var tokens []string
 
 	for {
-		tok := p.peek()
+		token := p.peek()
 
-		if tok == "" || isOperator(tok) || tok == ")" {
+		if token == "" || isOperator(token) {
 			break
 		}
 
-		args = append(args, p.consume())
+		if isRuneSpecial(rune(token[0])) {
+			p.error("Expected string but got symbol")
+		}
+
+		tokens = append(tokens, p.consume())
 	}
 
-	if len(args) == 0 {
-		return nil, errors.New("empty call")
+	if len(tokens) == 0 {
+		p.error("Empty call")
 	}
 
-	return &callNode{tokens: args}, nil
+	return &callNode{tokens}
 }
 
 func isOperator(s string) bool {
 	switch s {
-	case ";", "&&", "||", "|", "(", ")":
+	case ";", "&&", "||", "|":
 		return true
 	}
 

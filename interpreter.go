@@ -1,5 +1,7 @@
 package main
 
+import "os"
+
 func (c *callNode) exec(pane *pane) int {
 	name := string(c.tokens[0])
 	args := make([]string, 0, len(c.tokens[1:]))
@@ -8,7 +10,30 @@ func (c *callNode) exec(pane *pane) int {
 		args = append(args, string(arg))
 	}
 
-	return pane.runToExit(name, args...)
+	switch name {
+	case "cd":
+		if len(args) > 1 {
+			return 1
+		}
+
+		var path string
+
+		if len(args) == 1 {
+			path = args[0]
+		} else {
+			var err error
+			path, err = os.UserHomeDir()
+
+			if err != nil {
+				return 1
+			}
+		}
+
+		os.Chdir(path)
+		return 0
+	default:
+		return pane.runToExit(name, args...)
+	}
 }
 
 func (b *binaryNode) exec(pane *pane) int {

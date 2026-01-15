@@ -269,11 +269,12 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes,
 		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
 
-	tokenizedCommand := command.tokenize()
+	command.parse()
+	missingTrailingRunes := slices.Concat(command.tokenized.missingTrailingRunes, command.parser.missingTrailingRunes)
 
-	if len(tokenizedCommand.missingTrailingRunes) > 0 {
+	if len(missingTrailingRunes) > 0 {
 		drawText(renderer, atlas, cameraX, cameraY,
-			tokenizedCommand.missingTrailingRunes,
+			missingTrailingRunes,
 			Vector2{commandX, paneY},
 			color.RGBA{255, 255, 255, 255})
 	}
@@ -283,9 +284,9 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 		drawRect(renderer, cameraX, cameraY, position, glyphSize,
 			color.RGBA{255, 255, 255, 255})
 
-		if len(tokenizedCommand.missingTrailingRunes) > 0 {
+		if len(missingTrailingRunes) > 0 {
 			drawGlyph(renderer, atlas, cameraX, cameraY,
-				tokenizedCommand.missingTrailingRunes[0], position,
+				missingTrailingRunes[0], position,
 				color.RGBA{0, 0, 0, 255})
 		}
 	}

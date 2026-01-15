@@ -1,8 +1,6 @@
 package main
 
-import (
-	"unicode"
-)
+import "unicode"
 
 type token []rune
 
@@ -48,7 +46,7 @@ func tokenize(text []rune, result *tokenizeResult) {
 		default:
 			if isRuneSpecial(r) {
 				didSucceed := false
-				t, text, didSucceed = tokenizeOp(text, r)
+				t, text, didSucceed = tokenizeSymbol(text, r)
 
 				if !didSucceed {
 					result.didSucceed = false
@@ -117,11 +115,11 @@ func tokenizeIdentifier(text []rune, firstRune rune) (token, []rune) {
 	return t, text
 }
 
-func tokenizeOp(text []rune, firstRune rune) (token, []rune, bool) {
+func tokenizeSymbol(text []rune, firstRune rune) (token, []rune, bool) {
 	var secondRune rune
 
 	switch firstRune {
-	case ';':
+	case ';', '(', ')':
 		return token{firstRune}, text, true
 	case '|':
 		if len(text) > 0 && text[0] == '|' {
@@ -138,7 +136,7 @@ func tokenizeOp(text []rune, firstRune rune) (token, []rune, bool) {
 
 		return token{firstRune}, text, false
 	default:
-		panic("Unexpected rune in op")
+		panic("Unexpected rune in symbol")
 	}
 }
 
@@ -147,5 +145,10 @@ func nextRune(text []rune) (rune, []rune) {
 }
 
 func isRuneSpecial(r rune) bool {
-	return r == '"' || r == '\'' || r == ';' || r == '|' || r == '&'
+	switch r {
+	case '"', '\'', ';', '|', '&', '(', ')':
+		return true
+	}
+
+	return false
 }

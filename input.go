@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"slices"
 	"unicode/utf8"
 
@@ -37,9 +36,7 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 		case sdl.K_BACKSPACE:
 			command.pop()
 		case sdl.K_RETURN:
-			tokenizedCommand := command.tokenize()
-
-			if tokenizedCommand.didSucceed && runCommand(tokenizedCommand, panes, focusedPaneIndex, homeDir) {
+			if runCommand(command, panes, focusedPaneIndex, homeDir) {
 				command.clear()
 			} else {
 				*errorFlashTimer = 1
@@ -84,39 +81,18 @@ func shouldMove(needsMove bool, panes *[]*pane, focusedPaneIndex *int, dir int) 
 	return isPaneEmpty
 }
 
-func runCommand(tokenizedCommand *tokenizeResult, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
-	if len(tokenizedCommand.tokens) == 0 {
+func runCommand(command *command, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
+	ast, didSucceed := command.parse()
+
+	if !didSucceed {
 		return false
 	}
 
-	name := string(tokenizedCommand.tokens[0])
+	pane := newPane()
+	pane.run(ast)
 
-	switch name {
-	case "cd":
-		if len(tokenizedCommand.tokens) > 2 {
-			return false
-		}
-
-		path := homeDir
-
-		if len(tokenizedCommand.tokens) > 1 {
-			path = string(tokenizedCommand.tokens[1])
-		}
-
-		os.Chdir(path)
-	default:
-		ast, err := parse(tokenizedCommand.tokens)
-
-		if err != nil {
-			return false
-		}
-
-		pane := newPane()
-		pane.run(ast)
-
-		*panes = append(*panes, &pane)
-		*focusedPaneIndex++
-	}
+	*panes = append(*panes, &pane)
+	*focusedPaneIndex++
 
 	return true
 }

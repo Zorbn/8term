@@ -3,6 +3,8 @@ package main
 type command struct {
 	runes     []rune
 	tokenized tokenizeResult
+	parser    parser
+	ast       astNode
 	isDirty   bool
 }
 
@@ -29,13 +31,13 @@ func (c *command) clear() {
 	c.isDirty = true
 }
 
-func (c *command) tokenize() *tokenizeResult {
-	if !c.isDirty {
-		return &c.tokenized
+func (c *command) parse() (astNode, bool) {
+	if c.isDirty {
+		c.isDirty = false
+
+		tokenize(c.runes, &c.tokenized)
+		c.ast = c.parser.parse(c.tokenized.tokens)
 	}
 
-	c.isDirty = false
-
-	tokenize(c.runes, &c.tokenized)
-	return &c.tokenized
+	return c.ast, c.tokenized.didSucceed && len(c.parser.errors) == 0
 }
