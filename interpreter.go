@@ -3,12 +3,8 @@ package main
 import "os"
 
 func (c *callNode) exec(pane *pane) int {
-	name := string(c.tokens[0])
-	args := make([]string, 0, len(c.tokens[1:]))
-
-	for _, arg := range c.tokens[1:] {
-		args = append(args, string(arg))
-	}
+	name := c.children[0]
+	args := c.children[1:]
 
 	switch name {
 	case "cd":

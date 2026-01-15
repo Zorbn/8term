@@ -20,22 +20,17 @@ type pane struct {
 func newPane() pane {
 	buffer := make([]byte, 4096)
 	output := make(chan []byte)
-	emulator := newEmulator()
 
 	return pane{
 		pty{},
 		buffer,
 		output,
 		nil,
-		emulator,
+		emulator{},
 	}
 }
 
 func (p *pane) run(ast astNode) error {
-	if p.parser == nil {
-		p.parser = vte.NewParser(&p.emulator)
-	}
-
 	go func() {
 		ast.exec(p)
 		close(p.output)
@@ -76,6 +71,8 @@ func (p *pane) runToExit(name string, args ...string) int {
 }
 
 func (p *pane) handleOutput() bool {
+	didAdvance := false
+
 loop:
 	for {
 		select {
@@ -84,17 +81,26 @@ loop:
 				return false
 			}
 
+			if p.parser == nil {
+				p.emulator = newEmulator()
+				p.parser = vte.NewParser(&p.emulator)
+			}
+
 			for _, b := range output {
 				p.parser.Advance(b)
 			}
+
+			didAdvance = false
 		default:
 			break loop
 		}
 	}
 
-	input := p.emulator.input.Bytes()
-	p.emulator.input.Reset()
-	p.pty.write(input)
+	if didAdvance {
+		input := p.emulator.input.Bytes()
+		p.emulator.input.Reset()
+		p.pty.write(input)
+	}
 
 	return true
 }

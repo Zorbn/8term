@@ -270,7 +270,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
 
 	command.parse()
-	missingTrailingRunes := slices.Concat(command.tokenized.missingTrailingRunes, command.parser.missingTrailingRunes)
+	missingTrailingRunes := slices.Concat(command.tokenizer.missingTrailingRunes, command.parser.missingTrailingRunes)
 
 	if len(missingTrailingRunes) > 0 {
 		drawText(renderer, atlas, cameraX, cameraY,

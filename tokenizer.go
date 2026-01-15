@@ -1,24 +1,45 @@
 package main
 
-import "unicode"
+import (
+	"strings"
+	"unicode"
+)
 
-type token []rune
+type tokenKind int
 
-// TODO: Make this the tokenizer that has methods, like how parser works.
-// TODO: We're generally converting tokens to strings, should tokens be strings to start with?
-// TODO: There's no way to distinguish between && (operator) and "&&" (string).
-type tokenizeResult struct {
-	tokens               []token
-	missingTrailingRunes []rune
-	didSucceed           bool
+const (
+	tokenKindString tokenKind = iota
+	tokenKindSymbol
+	tokenKindEof
+)
+
+type token struct {
+	text string
+	kind tokenKind
 }
 
-func tokenize(text []rune, result *tokenizeResult) {
-	result.tokens = result.tokens[:0]
-	result.missingTrailingRunes = result.missingTrailingRunes[:0]
-	result.didSucceed = true
+func newToken(text string, kind tokenKind) token {
+	return token{text, kind}
+}
 
-	var t token
+func (t token) isSymbol(text string) bool {
+	return t.kind == tokenKindSymbol && t.text == text
+}
+
+type tokenizer struct {
+	tokens []token
+	// TODO: These should probably be string too?
+	missingTrailingRunes []rune
+	didSucceed           bool
+	tokenText            strings.Builder
+}
+
+func (t *tokenizer) tokenize(text []rune) {
+	t.tokens = t.tokens[:0]
+	t.missingTrailingRunes = t.missingTrailingRunes[:0]
+	t.didSucceed = true
+
+	var token token
 	r := ' '
 
 	for len(text) > 0 {
@@ -28,40 +49,36 @@ func tokenize(text []rune, result *tokenizeResult) {
 			continue
 		}
 
-		hadDelimiter := false
-
 		switch r {
 		case '"':
-			t, text, hadDelimiter = tokenizeString(text, '"', '\\')
-
-			if !hadDelimiter {
-				result.missingTrailingRunes = append(result.missingTrailingRunes, '"')
-			}
+			token, text = t.tokenizeString(text, '"', '\\')
 		case '\'':
-			t, text, hadDelimiter = tokenizeString(text, '\'', 0)
-
-			if !hadDelimiter {
-				result.missingTrailingRunes = append(result.missingTrailingRunes, '\'')
-			}
+			token, text = t.tokenizeString(text, '\'', 0)
 		default:
 			if isRuneSpecial(r) {
 				didSucceed := false
-				t, text, didSucceed = tokenizeSymbol(text, r)
+				token, text, didSucceed = t.tokenizeSymbol(text, r)
 
 				if !didSucceed {
-					result.didSucceed = false
+					t.didSucceed = false
 				}
 			} else {
-				t, text = tokenizeIdentifier(text, r)
+				token, text = t.tokenizeIdentifier(text, r)
 			}
 		}
 
-		result.tokens = append(result.tokens, t)
+		t.tokens = append(t.tokens, token)
 	}
 }
 
-func tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune, bool) {
-	t := make(token, 0)
+func (t *tokenizer) newToken(kind tokenKind) token {
+	token := newToken(t.tokenText.String(), kind)
+	t.tokenText.Reset()
+
+	return token
+}
+
+func (t *tokenizer) tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune) {
 	r := delimiter
 	isEscaped := false
 
@@ -78,63 +95,72 @@ func tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune, bo
 				continue
 			}
 
-			t = append(t, escape)
+			t.tokenText.WriteRune(escape)
 		}
 
 		isEscaped = false
 
 		if r == delimiter {
-			return t, text, true
+			return t.newToken(tokenKindString), text
 		}
 
-		t = append(t, r)
+		t.tokenText.WriteRune(r)
 	}
 
-	return t, text, false
+	t.missingTrailingRunes = append(t.missingTrailingRunes, delimiter)
+
+	return t.newToken(tokenKindString), text
 }
 
-func tokenizeIdentifier(text []rune, firstRune rune) (token, []rune) {
-	t := token{firstRune}
+func (t *tokenizer) tokenizeIdentifier(text []rune, firstRune rune) (token, []rune) {
+	t.tokenText.WriteRune(firstRune)
+
 	r := firstRune
 
 	for len(text) > 0 {
 		if unicode.IsSpace(text[0]) || isRuneSpecial(text[0]) {
-			return t, text
+			return t.newToken(tokenKindString), text
 		}
 
 		r, text = nextRune(text)
 
 		switch r {
 		case '"', '\'':
-			return t, text
+			return t.newToken(tokenKindString), text
 		}
 
-		t = append(t, r)
+		t.tokenText.WriteRune(r)
 	}
 
-	return t, text
+	return t.newToken(tokenKindString), text
 }
 
-func tokenizeSymbol(text []rune, firstRune rune) (token, []rune, bool) {
+func (t *tokenizer) tokenizeSymbol(text []rune, firstRune rune) (token, []rune, bool) {
+	t.tokenText.WriteRune(firstRune)
+
 	var secondRune rune
 
 	switch firstRune {
 	case ';', '(', ')':
-		return token{firstRune}, text, true
+		return t.newToken(tokenKindSymbol), text, true
 	case '|':
 		if len(text) > 0 && text[0] == '|' {
 			secondRune, text = nextRune(text)
-			return token{firstRune, secondRune}, text, true
+			t.tokenText.WriteRune(secondRune)
+
+			return t.newToken(tokenKindSymbol), text, true
 		}
 
-		return token{firstRune}, text, false
+		return t.newToken(tokenKindSymbol), text, true
 	case '&':
 		if len(text) > 0 && text[0] == '&' {
 			secondRune, text = nextRune(text)
-			return token{firstRune, secondRune}, text, true
+			t.tokenText.WriteRune(secondRune)
+
+			return t.newToken(tokenKindSymbol), text, true
 		}
 
-		return token{firstRune}, text, false
+		return t.newToken(tokenKindSymbol), text, false
 	default:
 		panic("Unexpected rune in symbol")
 	}
