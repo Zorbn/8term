@@ -8,26 +8,20 @@ import (
 )
 
 type pty struct {
-	cmd *exec.Cmd
 	tty *os.File
 }
 
-func newPty(name string, args ...string) (pty, error) {
-	cmd := exec.Command(name, args...)
-
-	tty, err := cpty.StartWithSize(cmd, &cpty.Winsize{
+func newPty(cmd *exec.Cmd) (pty, error) {
+	tty, err := cpty.StartWithAttrs(cmd, &cpty.Winsize{
 		Rows: uint16(emulatorRows),
 		Cols: uint16(emulatorCols),
-	})
+	}, nil)
 
 	if err != nil {
 		return pty{}, err
 	}
 
-	return pty{
-		cmd,
-		tty,
-	}, nil
+	return pty{tty}, nil
 }
 
 func (p *pty) write(input []byte) {

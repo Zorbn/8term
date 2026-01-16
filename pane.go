@@ -2,9 +2,9 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
 	"io"
 	"log"
+	"os/exec"
 
 	"github.com/danielgatis/go-vte"
 )
@@ -39,13 +39,12 @@ func (p *pane) run(ast astNode) error {
 	return nil
 }
 
-func (p *pane) runToExit(name string, args ...string) int {
+func (p *pane) runToExit(cmd *exec.Cmd) error {
 	var err error
-	p.pty, err = newPty(name, args...)
+	p.pty, err = newPty(cmd)
 
 	if err != nil {
-		p.output <- fmt.Appendf([]byte{}, "\x1b[0;31mUnable to run program: %s\x1b[m", name)
-		return 1
+		return err
 	}
 
 	for {
@@ -65,9 +64,8 @@ func (p *pane) runToExit(name string, args ...string) int {
 	}
 
 	p.pty.tty.Close()
-	p.pty.cmd.Wait()
 
-	return p.pty.cmd.ProcessState.ExitCode()
+	return nil
 }
 
 func (p *pane) handleOutput() bool {
