@@ -1,6 +1,8 @@
 package main
 
-import "errors"
+import (
+	"errors"
+)
 
 type astNode interface {
 	exec(pane *pane) int
@@ -25,12 +27,14 @@ type parser struct {
 	missingTrailingRunes []rune
 	errors               []error
 	ast                  astNode
+	lastCallNode         *callNode
 }
 
 func (p *parser) parse(tokens []token) {
 	p.pos = 0
 	p.missingTrailingRunes = p.missingTrailingRunes[:0]
 	p.errors = p.errors[:0]
+	p.lastCallNode = nil
 
 	ast := p.parseSequence(tokens)
 
@@ -139,6 +143,13 @@ func (p *parser) parsePipe(tokens []token) astNode {
 }
 
 func (p *parser) parseCall(tokens []token) *callNode {
+	callNode := p.parseCallInner(tokens)
+	p.lastCallNode = callNode
+
+	return callNode
+}
+
+func (p *parser) parseCallInner(tokens []token) *callNode {
 	if p.peek(tokens).kind == tokenKindEof {
 		p.error("Unexpected end of input")
 		return &callNode{}

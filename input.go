@@ -31,6 +31,8 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 		switch key {
 		case sdl.K_BACKSPACE:
 			command.pop()
+		case sdl.K_TAB:
+			command.applyCompletion()
 		case sdl.K_RETURN:
 			if runCommand(command, panes, focusedPaneIndex) {
 				command.clear()

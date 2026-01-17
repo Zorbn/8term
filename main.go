@@ -91,14 +91,6 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		errorFlashTimer -= dt
 		didResize := false
 
-		{
-			fps := 1 / dt
-
-			if fps < 100 {
-				fmt.Println(fps)
-			}
-		}
-
 		var event sdl.Event
 		for sdl.PollEvent(&event) {
 			switch event.Type {
@@ -193,6 +185,11 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	for i, pane := range panes {
 		emulator := &pane.emulator
+
+		if emulator.grid.usedHeight == 0 {
+			continue
+		}
+
 		paneHeight := atlas.glyphHeight * float32(emulator.grid.usedHeight)
 
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
@@ -210,6 +207,11 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	for paneIndex, pane := range panes {
 		emulator := &pane.emulator
+
+		if emulator.grid.usedHeight == 0 {
+			continue
+		}
+
 		paneHeight := atlas.glyphHeight * float32(emulator.grid.usedHeight)
 
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
@@ -285,7 +287,8 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 	}
 
 	command.parse()
-	missingTrailingRunes := slices.Concat(command.tokenizer.missingTrailingRunes, command.parser.missingTrailingRunes)
+
+	missingTrailingRunes := slices.Concat(command.completion, command.tokenizer.missingTrailingRunes, command.parser.missingTrailingRunes)
 
 	if len(missingTrailingRunes) > 0 {
 		drawText(renderer, atlas, cameraX, cameraY,

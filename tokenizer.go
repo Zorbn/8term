@@ -27,8 +27,7 @@ func (t token) isSymbol(text string) bool {
 }
 
 type tokenizer struct {
-	tokens []token
-	// TODO: These should probably be string too?
+	tokens               []token
 	missingTrailingRunes []rune
 	didSucceed           bool
 	tokenText            strings.Builder
