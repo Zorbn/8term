@@ -15,6 +15,8 @@ type pane struct {
 	output   chan []byte
 	parser   *vte.Parser
 	emulator emulator
+	exitCode int
+	timer    float32
 }
 
 func newPane() pane {
@@ -27,12 +29,14 @@ func newPane() pane {
 		output,
 		nil,
 		emulator{},
+		0,
+		0,
 	}
 }
 
 func (p *pane) run(ast astNode) error {
 	go func() {
-		ast.exec(p)
+		p.exitCode = ast.exec(p)
 		close(p.output)
 	}()
 

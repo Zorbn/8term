@@ -128,6 +128,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 				paneY += getPaneHeight(pane, atlas)
 			}
 
+			pane.timer += dt
 			isRunning := pane.handleOutput()
 
 			if pane.emulator.usedHeight > 0 {
@@ -165,15 +166,14 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 			cameraY = lerp(cameraY, targetY, dt*cameraSpeed)
 		}
 
-		draw(renderer, atlas, panes, focusedPaneIndex, cameraY, windowWidth, time,
+		draw(renderer, atlas, panes, focusedPaneIndex, cameraY, windowWidth, windowHeight, time,
 			errorFlashTimer, &command, paneBorderWidth, glyphSize)
 
 		renderer.Present()
 	}
 }
 
-func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneIndex int, cameraY, windowWidth, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
-
+func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneIndex int, cameraY, windowWidth, windowHeight, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
 	cameraX := (atlas.glyphWidth*float32(emulatorCols) - windowWidth) / 2
 
 	backgroundR := uint8(math.Sin(0.3*float64(time)+0)*10 + 10)
@@ -184,19 +184,21 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 	renderer.Clear()
 
 	paneWidth := atlas.glyphWidth * float32(emulatorCols)
+
 	var paneY float32 = 0
 
 	for i, pane := range panes {
 		emulator := &pane.emulator
 		paneHeight := atlas.glyphHeight * float32(emulator.usedHeight)
 
-		if paneY+paneHeight > cameraY {
-			borderColor := getPaneBorderColor(i, focusedPaneIndex)
-			borderWidth := getPaneBorderWidth(i, focusedPaneIndex, paneBorderWidth, time)
+		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
+			borderColor := getPaneBorderColor(i, focusedPaneIndex, pane)
+			borderWidth := getPaneBorderWidth(i, focusedPaneIndex, paneBorderWidth, pane.timer)
 			drawBorderedRect(renderer, cameraX, cameraY,
 				Vector2{0, paneY}, Vector2{paneWidth, paneHeight},
 				borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 		}
+
 		paneY += getPaneHeight(pane, atlas)
 	}
 
@@ -206,7 +208,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 		emulator := &pane.emulator
 		paneHeight := atlas.glyphHeight * float32(emulator.usedHeight)
 
-		if paneY+paneHeight > cameraY {
+		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
 			for y := range emulator.usedHeight {
 				lineY := atlas.glyphHeight*float32(y) + paneY
 				for x := range emulatorCols {
@@ -242,7 +244,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 		paneY += getPaneHeight(pane, atlas)
 	}
 
-	borderColor := getPaneBorderColor(len(panes), focusedPaneIndex)
+	borderColor := getPaneBorderColor(len(panes), focusedPaneIndex, nil)
 	borderWidth := getPaneBorderWidth(len(panes), focusedPaneIndex, paneBorderWidth, time)
 	drawBorderedRect(renderer, cameraX, cameraY,
 		Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight},

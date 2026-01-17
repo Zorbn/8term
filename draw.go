@@ -83,23 +83,29 @@ func drawBorderedRect(renderer *sdl.Renderer, cameraX, cameraY float32,
 	drawRect(renderer, cameraX, cameraY, position, size, backgroundColor)
 }
 
-func getPaneBorderColor(index, focusedIndex int) color.RGBA {
+func getPaneBorderColor(index, focusedIndex int, pane *pane) color.RGBA {
 	if index == focusedIndex {
 		return color.RGBA{135, 206, 235, 255}
-	} else {
-		return color.RGBA{211, 211, 211, 255}
 	}
+
+	if pane != nil && pane.exitCode != 0 {
+		return color.RGBA{230, 41, 55, 255}
+	}
+
+	return color.RGBA{211, 211, 211, 255}
 }
 
 func getPaneBorderWidth(index, focusedIndex int, paneBorderWidth, time float32) float32 {
-	if index == focusedIndex {
-		scaledTime := float64(time * 5)
-		scale := (math.Sin(scaledTime) + 2) / 2
+	var animationSpeed float32 = 5
 
-		return paneBorderWidth * float32(scale)
-	} else {
-		return paneBorderWidth
+	if index != focusedIndex {
+		time = min(time, math.Pi/animationSpeed)
 	}
+
+	scaledTime := float64(time * animationSpeed)
+	scale := (math.Sin(scaledTime) + 2) / 2
+
+	return paneBorderWidth * float32(scale)
 }
 
 func getPaneHeight(pane *pane, atlas *GlyphAtlas) float32 {
@@ -110,6 +116,10 @@ func getPaneHeight(pane *pane, atlas *GlyphAtlas) float32 {
 	}
 
 	return atlas.glyphHeight * float32(emulator.usedHeight+1)
+}
+
+func isPaneVisible(paneY, paneHeight, cameraY, windowHeight float32) bool {
+	return paneY+paneHeight > cameraY && paneY < cameraY+windowHeight
 }
 
 func terminalColorToColor(c uint32) color.RGBA {

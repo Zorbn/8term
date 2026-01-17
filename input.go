@@ -8,7 +8,6 @@ import (
 )
 
 func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, command *command, errorFlashTimer *float32, homeDir string) {
-
 	modState := sdl.GetModState()
 	cmdPressed := (modState & sdl.KMOD_GUI) != 0
 	ctrlPressed := (modState & sdl.KMOD_CTRL) != 0
