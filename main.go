@@ -59,10 +59,10 @@ func main() {
 	}
 	defer atlas.Destroy()
 
-	run(renderer, atlas)
+	run(renderer, atlas, dpi)
 }
 
-func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
+func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 	glyphSize := Vector2{atlas.glyphWidth, atlas.glyphHeight}
 	paneBorderWidth := atlas.glyphWidth / 2
 
@@ -77,11 +77,6 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 	os.Setenv("TERM", "xterm-256color")
 	os.Setenv("COLORTERM", "truecolor")
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = ""
-	}
-
 	var errorFlashTimer float32
 
 	lastTime := sdl.Ticks()
@@ -95,6 +90,14 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 		time += dt
 		errorFlashTimer -= dt
 		didResize := false
+
+		{
+			fps := 1 / dt
+
+			if fps < 100 {
+				fmt.Println(fps)
+			}
+		}
 
 		var event sdl.Event
 		for sdl.PollEvent(&event) {
@@ -116,7 +119,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 				}
 			case sdl.EVENT_KEY_DOWN:
 				keyEvent := event.KeyboardEvent()
-				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &errorFlashTimer, homeDir)
+				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &errorFlashTimer)
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
 			}
@@ -124,12 +127,12 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 
 		var paneY float32 = 0
 		for i, pane := range panes {
+			isRunning := pane.handleOutput()
+			pane.timer += dt
+
 			if i < focusedPaneIndex {
 				paneY += getPaneHeight(pane, atlas)
 			}
-
-			pane.timer += dt
-			isRunning := pane.handleOutput()
 
 			if pane.emulator.grid.usedHeight > 0 {
 				continue
@@ -166,14 +169,14 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 			cameraY = lerp(cameraY, targetY, dt*cameraSpeed)
 		}
 
-		draw(renderer, atlas, panes, focusedPaneIndex, cameraY, windowWidth, windowHeight, time,
+		draw(renderer, atlas, panes, focusedPaneIndex, cameraY, windowWidth, windowHeight, dpi, time,
 			errorFlashTimer, &command, paneBorderWidth, glyphSize)
 
 		renderer.Present()
 	}
 }
 
-func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneIndex int, cameraY, windowWidth, windowHeight, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
+func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneIndex int, cameraY, windowWidth, windowHeight, dpi, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
 	cameraX := (atlas.glyphWidth*float32(emulatorCols) - windowWidth) / 2
 
 	backgroundR := uint8(math.Sin(0.3*float64(time)+0)*10 + 10)
@@ -270,6 +273,15 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes,
 		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
+
+	if window, err := renderer.Window(); err == nil {
+		window.SetTextInputArea(&sdl.Rect{
+			X: int32((commandX - cameraX) / dpi),
+			Y: int32((paneY - cameraY) / dpi),
+			W: int32((paneWidth - commandX) / dpi),
+			H: int32(atlas.glyphHeight / dpi),
+		}, 0)
+	}
 
 	command.parse()
 	missingTrailingRunes := slices.Concat(command.tokenizer.missingTrailingRunes, command.parser.missingTrailingRunes)

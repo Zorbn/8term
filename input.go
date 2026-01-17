@@ -7,34 +7,18 @@ import (
 	"github.com/Zyko0/go-sdl3/sdl"
 )
 
-func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, command *command, errorFlashTimer *float32, homeDir string) {
+func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, command *command, errorFlashTimer *float32) {
 	modState := sdl.GetModState()
-	cmdPressed := (modState & sdl.KMOD_GUI) != 0
-	ctrlPressed := (modState & sdl.KMOD_CTRL) != 0
-	shiftPressed := (modState & sdl.KMOD_SHIFT) != 0
+	isCmdPressed := (modState & sdl.KMOD_GUI) != 0
+	isCtrlPressed := (modState & sdl.KMOD_CTRL) != 0
+	isShiftPressed := (modState & sdl.KMOD_SHIFT) != 0
 
-	if cmdPressed {
+	if isCmdPressed {
 		switch key {
 		case sdl.K_UP:
-			startPaneIndex := *focusedPaneIndex
-
-			for needsMove := true; shouldMove(needsMove, *panes, *focusedPaneIndex, -1); needsMove = false {
-				*focusedPaneIndex--
-			}
-
-			if shiftPressed {
-				swapPanes(*panes, *focusedPaneIndex, startPaneIndex)
-			}
+			handleMove(panes, focusedPaneIndex, -1, isShiftPressed)
 		case sdl.K_DOWN:
-			startPaneIndex := *focusedPaneIndex
-
-			for needsMove := true; shouldMove(needsMove, *panes, *focusedPaneIndex, 1); needsMove = false {
-				*focusedPaneIndex++
-			}
-
-			if shiftPressed {
-				swapPanes(*panes, *focusedPaneIndex, startPaneIndex)
-			}
+			handleMove(panes, focusedPaneIndex, 1, isShiftPressed)
 		case sdl.K_X:
 			if *focusedPaneIndex < len(*panes) {
 				*panes = slices.Delete(*panes, *focusedPaneIndex, *focusedPaneIndex+1)
@@ -48,7 +32,7 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 		case sdl.K_BACKSPACE:
 			command.pop()
 		case sdl.K_RETURN:
-			if runCommand(command, panes, focusedPaneIndex, homeDir) {
+			if runCommand(command, panes, focusedPaneIndex) {
 				command.clear()
 			} else {
 				*errorFlashTimer = 1
@@ -60,7 +44,7 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 
 	pane := (*panes)[*focusedPaneIndex]
 
-	if ctrlPressed && (key >= sdl.K_A && key <= sdl.K_Z) {
+	if isCtrlPressed && (key >= sdl.K_A && key <= sdl.K_Z) {
 		pane.pty.write([]byte{byte(key) & 0x1f})
 		return
 	}
@@ -74,6 +58,18 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 		writeRuneToPty(&pane.pty, '\r')
 	case sdl.K_ESCAPE:
 		writeRuneToPty(&pane.pty, '\x1b')
+	}
+}
+
+func handleMove(panes *[]*pane, focusedPaneIndex *int, dir int, isShiftPressed bool) {
+	startPaneIndex := *focusedPaneIndex
+
+	for needsMove := true; shouldMove(needsMove, *panes, *focusedPaneIndex, dir); needsMove = false {
+		*focusedPaneIndex += dir
+	}
+
+	if isShiftPressed {
+		swapPanes(*panes, *focusedPaneIndex, startPaneIndex)
 	}
 }
 
@@ -99,7 +95,7 @@ func swapPanes(panes []*pane, focusedPaneIndex int, startPaneIndex int) {
 	}
 }
 
-func runCommand(command *command, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
+func runCommand(command *command, panes *[]*pane, focusedPaneIndex *int) bool {
 	ast, didSucceed := command.parse()
 
 	if !didSucceed {
