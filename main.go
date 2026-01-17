@@ -126,7 +126,8 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		}
 
 		var paneY float32 = 0
-		for i, pane := range panes {
+		for i := len(panes) - 1; i >= 0; i-- {
+			pane := panes[i]
 			isRunning := pane.handleOutput()
 			pane.timer += dt
 
