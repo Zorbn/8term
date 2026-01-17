@@ -194,7 +194,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
 			borderColor := getPaneBorderColor(i, focusedPaneIndex, pane)
 			borderWidth := getPaneBorderWidth(i, focusedPaneIndex, paneBorderWidth, pane.timer)
-			drawBorderedRect(renderer, cameraX, cameraY,
+			drawBorderedRect(renderer, atlas, cameraX, cameraY,
 				Vector2{0, paneY}, Vector2{paneWidth, paneHeight},
 				borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 		}
@@ -221,7 +221,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 					if bg != Background {
 						c := terminalColorToColor(bg)
-						drawRect(renderer, cameraX, cameraY, position, glyphSize, c)
+						drawRect(renderer, atlas, cameraX, cameraY, position, glyphSize, c)
 					}
 
 					c := terminalColorToColor(fg)
@@ -235,7 +235,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 					atlas.glyphWidth * float32(emulator.cursorX),
 					paneY + atlas.glyphHeight*float32(emulator.cursorY),
 				}
-				drawRect(renderer, cameraX, cameraY, position, glyphSize,
+				drawRect(renderer, atlas, cameraX, cameraY, position, glyphSize,
 					color.RGBA{255, 255, 255, 255})
 				drawGlyph(renderer, atlas, cameraX, cameraY, r, position,
 					color.RGBA{0, 0, 0, 255})
@@ -246,13 +246,13 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	borderColor := getPaneBorderColor(len(panes), focusedPaneIndex, nil)
 	borderWidth := getPaneBorderWidth(len(panes), focusedPaneIndex, paneBorderWidth, time)
-	drawBorderedRect(renderer, cameraX, cameraY,
+	drawBorderedRect(renderer, atlas, cameraX, cameraY,
 		Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight},
 		borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 
 	if errorFlashTimer > 0 {
 		errorColor := color.RGBA{255, 0, 0, uint8(errorFlashTimer * 255)}
-		drawRect(renderer, cameraX, cameraY,
+		drawRect(renderer, atlas, cameraX, cameraY,
 			Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight}, errorColor)
 	}
 
@@ -283,7 +283,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	if len(panes) == focusedPaneIndex {
 		position := Vector2{commandX, paneY}
-		drawRect(renderer, cameraX, cameraY, position, glyphSize,
+		drawRect(renderer, atlas, cameraX, cameraY, position, glyphSize,
 			color.RGBA{255, 255, 255, 255})
 
 		if len(missingTrailingRunes) > 0 {

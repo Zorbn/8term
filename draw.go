@@ -8,14 +8,17 @@ import (
 	"github.com/Zyko0/go-sdl3/sdl"
 )
 
-func drawRect(renderer *sdl.Renderer, cameraX, cameraY float32, pos, size Vector2, c color.RGBA) {
+func drawRect(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32, pos, size Vector2, c color.RGBA) {
 	x := pos.X - cameraX
 	y := pos.Y - cameraY
 	w := size.X
 	h := size.Y
 
-	renderer.SetDrawColor(c.R, c.G, c.B, c.A)
-	renderer.RenderFillRect(&sdl.FRect{X: x, Y: y, W: w, H: h})
+	atlas.texture.SetColorMod(c.R, c.G, c.B)
+	atlas.texture.SetAlphaMod(c.A)
+
+	renderer.RenderTexture(atlas.texture, &sdl.FRect{X: 0, Y: 0, W: 1, H: 1},
+		&sdl.FRect{X: x, Y: y, W: w, H: h})
 }
 
 func drawGlyph(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
@@ -72,15 +75,15 @@ func drawText(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float3
 	return atlas.glyphWidth * float32(len(text))
 }
 
-func drawBorderedRect(renderer *sdl.Renderer, cameraX, cameraY float32,
+func drawBorderedRect(renderer *sdl.Renderer, atlas *GlyphAtlas, cameraX, cameraY float32,
 	position, size Vector2, borderWidth float32, borderColor, backgroundColor color.RGBA) {
 
 	borderOffset := Vector2{borderWidth, borderWidth}
 	borderPosition := Vector2{position.X - borderOffset.X, position.Y - borderOffset.Y}
 	borderSize := Vector2{size.X + borderOffset.X*2, size.Y + borderOffset.Y*2}
 
-	drawRect(renderer, cameraX, cameraY, borderPosition, borderSize, borderColor)
-	drawRect(renderer, cameraX, cameraY, position, size, backgroundColor)
+	drawRect(renderer, atlas, cameraX, cameraY, borderPosition, borderSize, borderColor)
+	drawRect(renderer, atlas, cameraX, cameraY, position, size, backgroundColor)
 }
 
 func getPaneBorderColor(index, focusedIndex int, pane *pane) color.RGBA {

@@ -40,7 +40,7 @@ func loadGlyphAtlas(renderer *sdl.Renderer, dpi float32) (*GlyphAtlas, error) {
 
 func newGlyphAtlas(renderer *sdl.Renderer, font *ttf.Font) *GlyphAtlas {
 	sdlGlyphWidth, sdlGlyphHeight, _ := font.StringSize("M")
-	glyphWidth, glyphHeight := int(sdlGlyphWidth), int(sdlGlyphHeight)
+	glyphWidth, glyphHeight := float32(sdlGlyphWidth), float32(sdlGlyphHeight)
 
 	const textureSize = 2048
 
@@ -55,6 +55,8 @@ func newGlyphAtlas(renderer *sdl.Renderer, font *ttf.Font) *GlyphAtlas {
 	renderer.SetRenderTarget(texture)
 	renderer.SetDrawColor(0, 0, 0, 0)
 	renderer.Clear()
+	renderer.SetDrawColor(255, 255, 255, 255)
+	renderer.RenderFillRect(&sdl.FRect{X: 0, Y: 0, W: glyphWidth, H: glyphHeight})
 	renderer.SetRenderTarget(nil)
 
 	return &GlyphAtlas{
@@ -63,9 +65,10 @@ func newGlyphAtlas(renderer *sdl.Renderer, font *ttf.Font) *GlyphAtlas {
 		texture:     texture,
 		glyphs:      make(map[rune]sdl.FRect),
 		size:        textureSize,
-		glyphWidth:  float32(glyphWidth),
-		glyphHeight: float32(glyphHeight),
+		glyphWidth:  glyphWidth,
+		glyphHeight: glyphHeight,
 		rowHeight:   int32(glyphHeight),
+		cursorX:     int32(glyphWidth),
 	}
 }
 

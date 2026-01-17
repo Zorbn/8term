@@ -9,6 +9,8 @@ import (
 	"github.com/danielgatis/go-vte"
 )
 
+const bufferLen = 1024
+
 type pane struct {
 	pty      pty
 	buffer   []byte
@@ -20,7 +22,7 @@ type pane struct {
 }
 
 func newPane() pane {
-	buffer := make([]byte, 4096)
+	buffer := make([]byte, bufferLen)
 	output := make(chan []byte)
 
 	return pane{
@@ -92,7 +94,7 @@ loop:
 				p.parser.Advance(b)
 			}
 
-			didAdvance = false
+			didAdvance = true
 		default:
 			break loop
 		}
