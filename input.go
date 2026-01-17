@@ -11,16 +11,29 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 	modState := sdl.GetModState()
 	cmdPressed := (modState & sdl.KMOD_GUI) != 0
 	ctrlPressed := (modState & sdl.KMOD_CTRL) != 0
+	shiftPressed := (modState & sdl.KMOD_SHIFT) != 0
 
 	if cmdPressed {
 		switch key {
 		case sdl.K_UP:
-			for needsMove := true; shouldMove(needsMove, panes, focusedPaneIndex, -1); needsMove = false {
+			startPaneIndex := *focusedPaneIndex
+
+			for needsMove := true; shouldMove(needsMove, *panes, *focusedPaneIndex, -1); needsMove = false {
 				*focusedPaneIndex--
 			}
+
+			if shiftPressed {
+				swapPanes(*panes, *focusedPaneIndex, startPaneIndex)
+			}
 		case sdl.K_DOWN:
-			for needsMove := true; shouldMove(needsMove, panes, focusedPaneIndex, 1); needsMove = false {
+			startPaneIndex := *focusedPaneIndex
+
+			for needsMove := true; shouldMove(needsMove, *panes, *focusedPaneIndex, 1); needsMove = false {
 				*focusedPaneIndex++
+			}
+
+			if shiftPressed {
+				swapPanes(*panes, *focusedPaneIndex, startPaneIndex)
 			}
 		case sdl.K_X:
 			if *focusedPaneIndex < len(*panes) {
@@ -64,8 +77,8 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 	}
 }
 
-func shouldMove(needsMove bool, panes *[]*pane, focusedPaneIndex *int, dir int) bool {
-	canMove := (dir > 0 && *focusedPaneIndex < len(*panes)) || (dir < 0 && *focusedPaneIndex > 0)
+func shouldMove(needsMove bool, panes []*pane, focusedPaneIndex int, dir int) bool {
+	canMove := (dir > 0 && focusedPaneIndex < len(panes)) || (dir < 0 && focusedPaneIndex > 0)
 
 	if !canMove {
 		return false
@@ -75,9 +88,15 @@ func shouldMove(needsMove bool, panes *[]*pane, focusedPaneIndex *int, dir int) 
 		return true
 	}
 
-	isPaneEmpty := (*panes)[*focusedPaneIndex].emulator.grid.usedHeight == 0
+	isPaneEmpty := panes[focusedPaneIndex].emulator.grid.usedHeight == 0
 
 	return isPaneEmpty
+}
+
+func swapPanes(panes []*pane, focusedPaneIndex int, startPaneIndex int) {
+	if startPaneIndex < len(panes) && focusedPaneIndex < len(panes) {
+		panes[focusedPaneIndex], panes[startPaneIndex] = panes[startPaneIndex], panes[focusedPaneIndex]
+	}
 }
 
 func runCommand(command *command, panes *[]*pane, focusedPaneIndex *int, homeDir string) bool {
