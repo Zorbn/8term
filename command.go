@@ -89,6 +89,10 @@ func (c *command) updateCompletion() {
 	}
 
 	for _, r := range match[len(file):] {
+		if doesRuneBreakIdentifier(r) {
+			c.completion = append(c.completion, '\\')
+		}
+
 		c.completion = append(c.completion, r)
 	}
 

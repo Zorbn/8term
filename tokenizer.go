@@ -50,9 +50,9 @@ func (t *tokenizer) tokenize(text []rune) {
 
 		switch r {
 		case '"':
-			token, text = t.tokenizeString(text, '"', '\\')
+			token, text = t.tokenizeString(text, '"', true)
 		case '\'':
-			token, text = t.tokenizeString(text, '\'', 0)
+			token, text = t.tokenizeString(text, '\'', false)
 		default:
 			if isRuneSpecial(r) {
 				didSucceed := false
@@ -77,14 +77,14 @@ func (t *tokenizer) newToken(kind tokenKind) token {
 	return token
 }
 
-func (t *tokenizer) tokenizeString(text []rune, delimiter rune, escape rune) (token, []rune) {
+func (t *tokenizer) tokenizeString(text []rune, delimiter rune, canEscape bool) (token, []rune) {
 	r := delimiter
 	isEscaped := false
 
 	for len(text) > 0 {
 		r, text = nextRune(text)
 
-		if r == escape {
+		if canEscape && r == '\\' {
 			isEscaped = true
 			continue
 		}
@@ -94,7 +94,7 @@ func (t *tokenizer) tokenizeString(text []rune, delimiter rune, escape rune) (to
 				continue
 			}
 
-			t.tokenText.WriteRune(escape)
+			t.tokenText.WriteRune('\\')
 		}
 
 		isEscaped = false
@@ -115,15 +115,21 @@ func (t *tokenizer) tokenizeIdentifier(text []rune, firstRune rune) (token, []ru
 	t.tokenText.WriteRune(firstRune)
 
 	r := firstRune
+	isEscaped := false
 
 	for len(text) > 0 {
-		if unicode.IsSpace(text[0]) || isRuneSpecial(text[0]) {
+		if !isEscaped && doesRuneBreakIdentifier(text[0]) {
 			return t.newToken(tokenKindString), text
 		}
+
+		isEscaped = false
 
 		r, text = nextRune(text)
 
 		switch r {
+		case '\\':
+			isEscaped = true
+			continue
 		case '"', '\'':
 			return t.newToken(tokenKindString), text
 		}
@@ -167,6 +173,10 @@ func (t *tokenizer) tokenizeSymbol(text []rune, firstRune rune) (token, []rune, 
 
 func nextRune(text []rune) (rune, []rune) {
 	return text[0], text[1:]
+}
+
+func doesRuneBreakIdentifier(r rune) bool {
+	return unicode.IsSpace(r) || isRuneSpecial(r)
 }
 
 func isRuneSpecial(r rune) bool {

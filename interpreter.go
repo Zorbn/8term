@@ -115,7 +115,6 @@ func runCall(call *callNode, pane *pane, input *os.File, output *os.File) proces
 	}
 
 	if err != nil {
-		fmt.Println(err)
 		writeCallErrorToPane(name, pane)
 		return process{exitCode: 1}
 	}
