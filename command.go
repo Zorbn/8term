@@ -7,11 +7,18 @@ import (
 )
 
 type command struct {
-	runes      []rune
-	tokenizer  tokenizer
-	parser     parser
-	isDirty    bool
-	completion []rune
+	runes           []rune
+	tokenizer       tokenizer
+	parser          parser
+	isDirty         bool
+	completion      []rune
+	pathExecutables []string
+}
+
+func newCommand() command {
+	pathExecutables := getPathExecutables()
+
+	return command{pathExecutables: pathExecutables}
 }
 
 func (c *command) append(r rune) {
@@ -59,6 +66,19 @@ func (c *command) updateCompletion() {
 		return
 	}
 
+	match := ""
+
+	if len(call.children) == 1 && c.runes[len(c.runes)-1] != ' ' {
+		prefix := call.children[0]
+
+		for _, executable := range c.pathExecutables {
+			if (match == "" || len(executable) < len(match)) && strings.HasPrefix(executable, prefix) {
+
+				match = executable
+			}
+		}
+	}
+
 	path := call.children[len(call.children)-1]
 	dir, file := filepath.Split(path)
 
@@ -71,16 +91,14 @@ func (c *command) updateCompletion() {
 		return
 	}
 
-	match := ""
 	isDir := false
 
 	for _, entry := range entries {
 		name := entry.Name()
 
-		if strings.HasPrefix(name, file) {
+		if (match == "" || len(name) < len(match)) && strings.HasPrefix(name, file) {
 			match = name
 			isDir = entry.IsDir()
-			break
 		}
 	}
 
@@ -107,4 +125,44 @@ func (c *command) applyCompletion() {
 	}
 
 	c.completion = c.completion[:0]
+}
+
+func getPathExecutables() []string {
+	var executables []string
+	seen := make(map[string]bool)
+
+	pathEnv := os.Getenv("PATH")
+	dirs := filepath.SplitList(pathEnv)
+
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+
+		if err != nil {
+			continue
+		}
+
+		for _, entry := range entries {
+
+			if entry.IsDir() {
+				continue
+			}
+
+			info, err := entry.Info()
+
+			if err != nil {
+				continue
+			}
+
+			if info.Mode()&0111 != 0 {
+				name := entry.Name()
+
+				if !seen[name] {
+					executables = append(executables, name)
+					seen[name] = true
+				}
+			}
+		}
+	}
+
+	return executables
 }

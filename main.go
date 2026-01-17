@@ -71,7 +71,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 	cameraMargin := atlas.glyphHeight * 3
 
 	var panes []*pane
-	var command command
+	command := newCommand()
 	focusedPaneIndex := 0
 
 	os.Setenv("TERM", "xterm-256color")
