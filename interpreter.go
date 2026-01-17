@@ -71,12 +71,15 @@ func (p *pipeNode) exec(pane *pane) int {
 			output = nil
 		}
 
+		input = nextInput
+
 		if process.exitCode != 0 {
-			nextInput.Close()
 			break
 		}
+	}
 
-		input = nextInput
+	if input != nil {
+		input.Close()
 	}
 
 	for _, process := range processes {
@@ -98,7 +101,9 @@ func runCall(call *callNode, pane *pane, input *os.File, output *os.File) proces
 
 	cmd := exec.Command(name, args...)
 
-	cmd.Stdin = input
+	if input != nil {
+		cmd.Stdin = input
+	}
 
 	var err error
 
