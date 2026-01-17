@@ -15,9 +15,9 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 
 	if isCmdPressed {
 		switch key {
-		case sdl.K_UP, sdl.K_K:
+		case sdl.K_UP:
 			handleMove(panes, focusedPaneIndex, -1, isShiftPressed)
-		case sdl.K_DOWN, sdl.K_J:
+		case sdl.K_DOWN:
 			handleMove(panes, focusedPaneIndex, 1, isShiftPressed)
 		case sdl.K_X:
 			if *focusedPaneIndex < len(*panes) {
@@ -33,8 +33,13 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 			command.pop()
 		case sdl.K_TAB:
 			command.applyCompletion()
+		case sdl.K_UP:
+			command.historyUp()
+		case sdl.K_DOWN:
+			command.historyDown()
 		case sdl.K_RETURN:
 			if runCommand(command, panes, focusedPaneIndex) {
+				command.addToHistory()
 				command.clear()
 			} else {
 				*errorFlashTimer = 1

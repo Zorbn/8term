@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -13,6 +14,9 @@ type command struct {
 	isDirty         bool
 	completion      []rune
 	pathExecutables []string
+	history         [][]rune
+	historyIndex    int
+	pendingRunes    []rune
 }
 
 func newCommand() command {
@@ -41,6 +45,63 @@ func (c *command) clear() {
 	}
 
 	c.runes = c.runes[:0]
+	c.isDirty = true
+}
+
+func (c *command) addToHistory() {
+	if len(c.runes) == 0 {
+		return
+	}
+
+	if len(c.history) == 0 || !slices.Equal(c.history[len(c.history)-1], c.runes) {
+		item := make([]rune, len(c.runes))
+		copy(item, c.runes)
+
+		c.history = append(c.history, item)
+
+	}
+
+	c.historyIndex = len(c.history)
+	c.pendingRunes = nil
+}
+
+func (c *command) historyUp() {
+	if c.historyIndex == 0 {
+		return
+	}
+
+	if c.historyIndex == len(c.history) {
+		c.pendingRunes = make([]rune, len(c.runes))
+		copy(c.pendingRunes, c.runes)
+	}
+
+	c.historyIndex--
+	c.loadHistory(c.historyIndex)
+}
+
+func (c *command) historyDown() {
+	if c.historyIndex >= len(c.history) {
+		return
+	}
+
+	c.historyIndex++
+
+	if c.historyIndex == len(c.history) {
+		c.runes = make([]rune, len(c.pendingRunes))
+		copy(c.runes, c.pendingRunes)
+
+		c.isDirty = true
+	} else {
+		c.loadHistory(c.historyIndex)
+	}
+}
+
+func (c *command) loadHistory(index int) {
+	item := c.history[index]
+
+	c.runes = make([]rune, len(item))
+	copy(c.runes, item)
+
 	c.isDirty = true
 }
 
