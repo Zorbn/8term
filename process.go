@@ -13,4 +13,5 @@ func (p *process) wait() {
 	}
 
 	p.cmd.Wait()
+	p.exitCode = p.cmd.ProcessState.ExitCode()
 }

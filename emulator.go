@@ -160,6 +160,7 @@ func (e *emulator) setRune(r rune, index int) {
 }
 
 func (e *emulator) newlineCursor() {
+	e.usedHeight = max(e.usedHeight, e.cursorY+1)
 	e.cursorY++
 
 	if e.cursorY > e.scrollBottom && !e.isInAlternateBuffer {

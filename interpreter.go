@@ -7,19 +7,10 @@ import (
 )
 
 func (c *callNode) exec(pane *pane) int {
-	cmd, exitCode := runCall(c, pane, nil, nil)
+	process := runCall(c, pane, nil, nil)
+	process.wait()
 
-	if exitCode != 0 {
-		return exitCode
-	}
-
-	if cmd != nil {
-		cmd.Wait()
-
-		return cmd.ProcessState.ExitCode()
-	}
-
-	return 0
+	return process.exitCode
 }
 
 func (b *binaryNode) exec(pane *pane) int {
@@ -50,10 +41,9 @@ func (b *binaryNode) exec(pane *pane) int {
 }
 
 func (p *pipeNode) exec(pane *pane) int {
-	var commands []*exec.Cmd
+	var processes []process
 	var input *os.File
 	var output *os.File
-	var exitCode int
 
 	for i, call := range p.children {
 		shouldPipe := i < len(p.children)-1
@@ -68,9 +58,8 @@ func (p *pipeNode) exec(pane *pane) int {
 			}
 		}
 
-		var cmd *exec.Cmd
-
-		cmd, exitCode = runCall(call, pane, input, output)
+		process := runCall(call, pane, input, output)
+		processes = append(processes, process)
 
 		if input != nil {
 			input.Close()
@@ -82,37 +71,29 @@ func (p *pipeNode) exec(pane *pane) int {
 			output = nil
 		}
 
-		if exitCode != 0 {
+		if process.exitCode != 0 {
 			nextInput.Close()
 			break
 		}
 
 		input = nextInput
-
-		if cmd != nil {
-			commands = append(commands, cmd)
-		}
 	}
 
-	for _, cmd := range commands {
-		cmd.Wait()
+	for _, process := range processes {
+		process.wait()
 	}
 
-	if exitCode != 0 {
-		return exitCode
-	}
+	lastProcess := processes[len(processes)-1]
 
-	lastCommand := commands[len(commands)-1]
-
-	return lastCommand.ProcessState.ExitCode()
+	return lastProcess.exitCode
 }
 
-func runCall(call *callNode, pane *pane, input *os.File, output *os.File) (*exec.Cmd, int) {
+func runCall(call *callNode, pane *pane, input *os.File, output *os.File) process {
 	name := call.children[0]
 	args := call.children[1:]
 
-	if isBuiltin, exitCode := tryRunBuiltin(name, args, pane, input, output); isBuiltin {
-		return nil, exitCode
+	if process, isBuiltin := tryRunBuiltin(name, args, pane, input, output); isBuiltin {
+		return process
 	}
 
 	cmd := exec.Command(name, args...)
@@ -122,35 +103,31 @@ func runCall(call *callNode, pane *pane, input *os.File, output *os.File) (*exec
 	var err error
 
 	if output != nil {
-		fmt.Println(name, "cmd start")
 		cmd.Stdout = output
 		err = cmd.Start()
 	} else {
-		fmt.Println(name, "pane start")
 		err = pane.runToExit(cmd)
 	}
 
 	if err != nil {
 		writeCallErrorToPane(name, pane)
-		return nil, 1
+		return process{exitCode: 1}
 	}
 
-	return cmd, 0
+	return process{cmd: cmd}
 }
 
-func tryRunBuiltin(name string, args []string, pane *pane, input *os.File, output *os.File) (isBuiltin bool, exitCode int) {
+func tryRunBuiltin(name string, args []string, pane *pane, input *os.File, output *os.File) (process, bool) {
 	switch name {
 	case "cd", "help":
-		isBuiltin = true
 	default:
-		return
+		return process{}, false
 	}
 
 	switch name {
 	case "cd":
 		if len(args) > 1 {
-			exitCode = 1
-			return
+			return process{exitCode: 1}, true
 		}
 
 		var path string
@@ -162,22 +139,20 @@ func tryRunBuiltin(name string, args []string, pane *pane, input *os.File, outpu
 			path, err = os.UserHomeDir()
 
 			if err != nil {
-				exitCode = 1
-				return
+				return process{exitCode: 1}, true
 			}
 		}
 
 		os.Chdir(path)
 	case "help":
 		if len(args) != 0 {
-			exitCode = 1
-			return
+			return process{exitCode: 1}, true
 		}
 
 		writeFromBuiltin("Try 'cd' to change directories.", pane, output)
 	}
 
-	return
+	return process{exitCode: 0}, true
 }
 
 func writeFromBuiltin(text string, pane *pane, output *os.File) {
@@ -191,5 +166,5 @@ func writeFromBuiltin(text string, pane *pane, output *os.File) {
 }
 
 func writeCallErrorToPane(name string, pane *pane) {
-	pane.output <- fmt.Appendf([]byte{}, "\x1b[0;31mUnable to run program: %s\x1b[m", name)
+	pane.output <- fmt.Appendf([]byte{}, "\x1b[0;31mUnable to run program: %s\x1b[m\r\n", name)
 }
