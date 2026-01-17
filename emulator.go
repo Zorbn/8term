@@ -273,6 +273,8 @@ func (e *emulator) OscDispatch(params [][]byte, bellTerminated bool) {
 
 func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore bool, r rune) {
 	switch r {
+	case 'c':
+		e.input.WriteString("\x1b[?1;0c")
 	case 'm':
 		e.parseFormatting(params)
 	case 'l':
@@ -400,7 +402,6 @@ func (e *emulator) SosPmApcDispatch(kind vte.SosPmApcKind, data []byte, bellTerm
 	if isDebug {
 		kindName := []string{"SOS", "PM", "APC"}[kind]
 		fmt.Printf("[SosPmApcDispatch] kind=%s, data=%q, bellTerminated=%v\n", kindName, data, bellTerminated)
-
 	}
 }
 
