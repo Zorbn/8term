@@ -75,7 +75,7 @@ func shouldMove(needsMove bool, panes *[]*pane, focusedPaneIndex *int, dir int) 
 		return true
 	}
 
-	isPaneEmpty := (*panes)[*focusedPaneIndex].emulator.usedHeight == 0
+	isPaneEmpty := (*panes)[*focusedPaneIndex].emulator.grid.usedHeight == 0
 
 	return isPaneEmpty
 }

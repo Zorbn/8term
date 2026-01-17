@@ -131,7 +131,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 			pane.timer += dt
 			isRunning := pane.handleOutput()
 
-			if pane.emulator.usedHeight > 0 {
+			if pane.emulator.grid.usedHeight > 0 {
 				continue
 			}
 
@@ -155,7 +155,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas) {
 
 		var targetY float32
 		if focusedPaneIndex < len(panes) {
-			targetY = paneY - (windowHeight-float32(panes[focusedPaneIndex].emulator.usedHeight)*atlas.glyphHeight)/2
+			targetY = paneY - (windowHeight-float32(panes[focusedPaneIndex].emulator.grid.usedHeight)*atlas.glyphHeight)/2
 		} else {
 			targetY = paneY - windowHeight + atlas.glyphHeight + cameraMargin
 		}
@@ -189,7 +189,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	for i, pane := range panes {
 		emulator := &pane.emulator
-		paneHeight := atlas.glyphHeight * float32(emulator.usedHeight)
+		paneHeight := atlas.glyphHeight * float32(emulator.grid.usedHeight)
 
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
 			borderColor := getPaneBorderColor(i, focusedPaneIndex, pane)
@@ -206,10 +206,10 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	for paneIndex, pane := range panes {
 		emulator := &pane.emulator
-		paneHeight := atlas.glyphHeight * float32(emulator.usedHeight)
+		paneHeight := atlas.glyphHeight * float32(emulator.grid.usedHeight)
 
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
-			for y := range emulator.usedHeight {
+			for y := range emulator.grid.usedHeight {
 				lineY := atlas.glyphHeight*float32(y) + paneY
 				for x := range emulatorCols {
 					i := y*emulatorCols + x
@@ -229,7 +229,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 				}
 			}
 
-			if paneIndex == focusedPaneIndex && emulator.cursorY < emulator.usedHeight {
+			if paneIndex == focusedPaneIndex && emulator.cursorY < emulator.grid.usedHeight {
 				r := emulator.grid.runes[emulator.cursorY*emulatorCols+emulator.cursorX]
 				position := Vector2{
 					atlas.glyphWidth * float32(emulator.cursorX),

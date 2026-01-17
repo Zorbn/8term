@@ -64,6 +64,7 @@ type grid struct {
 	runes            []rune
 	foregroundColors []uint32
 	backgroundColors []uint32
+	usedHeight       int
 }
 
 func newGrid() grid {
@@ -80,6 +81,7 @@ func newGrid() grid {
 		runes,
 		foregroundColors,
 		backgroundColors,
+		0,
 	}
 }
 
@@ -89,7 +91,6 @@ const emulatorCols int = 80
 type emulator struct {
 	grid                              grid
 	otherGrid                         grid
-	usedHeight                        int
 	isInAlternateBuffer               bool
 	cursorX, cursorY                  int
 	scrollTop, scrollBottom           int
@@ -102,7 +103,6 @@ func newEmulator() emulator {
 	grid := newGrid()
 	otherGrid := newGrid()
 
-	usedHeight := 0
 	isInAlternateBuffer := false
 	cursorX, cursorY := 0, 0
 	scrollTop, scrollBottom := 0, emulatorRows-1
@@ -114,7 +114,6 @@ func newEmulator() emulator {
 	return emulator{
 		grid,
 		otherGrid,
-		usedHeight,
 		isInAlternateBuffer,
 		cursorX, cursorY,
 		scrollTop, scrollBottom,
@@ -132,7 +131,7 @@ func (e *emulator) writeRune(r rune) {
 
 	e.setRuneAt(r, e.cursorX, e.cursorY)
 	e.cursorX++
-	e.usedHeight = max(e.usedHeight, e.cursorY+1)
+	e.grid.usedHeight = max(e.grid.usedHeight, e.cursorY+1)
 }
 
 func (e *emulator) setRuneAt(r rune, x int, y int) {
@@ -160,7 +159,7 @@ func (e *emulator) setRune(r rune, index int) {
 }
 
 func (e *emulator) newlineCursor() {
-	e.usedHeight = max(e.usedHeight, e.cursorY+1)
+	e.grid.usedHeight = max(e.grid.usedHeight, e.cursorY+1)
 	e.cursorY++
 
 	if e.cursorY > e.scrollBottom && !e.isInAlternateBuffer {

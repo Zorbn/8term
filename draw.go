@@ -114,11 +114,11 @@ func getPaneBorderWidth(index, focusedIndex int, paneBorderWidth, time float32) 
 func getPaneHeight(pane *pane, atlas *GlyphAtlas) float32 {
 	emulator := &pane.emulator
 
-	if emulator.usedHeight == 0 {
+	if emulator.grid.usedHeight == 0 {
 		return 0
 	}
 
-	return atlas.glyphHeight * float32(emulator.usedHeight+1)
+	return atlas.glyphHeight * float32(emulator.grid.usedHeight+1)
 }
 
 func isPaneVisible(paneY, paneHeight, cameraY, windowHeight float32) bool {
