@@ -288,12 +288,17 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 				}
 			}
 
-			if paneIndex == focusedPaneIndex && emulator.cursorY < emulator.grid.usedHeight {
-				r := emulator.grid.runes[emulator.cursorY*emulatorCols+emulator.cursorX]
+			cursorX := emulator.cursorX
+			cursorY := emulator.getAbsoluteY(emulator.cursorY)
+
+			if paneIndex == focusedPaneIndex && cursorY < emulator.grid.usedHeight {
+				r := emulator.grid.runes[cursorY*emulatorCols+cursorX]
+
 				position := Vector2{
-					atlas.glyphWidth * float32(emulator.cursorX),
-					paneY + atlas.glyphHeight*float32(emulator.cursorY),
+					atlas.glyphWidth * float32(cursorX),
+					paneY + atlas.glyphHeight*float32(cursorY),
 				}
+
 				drawRect(renderer, atlas, cameraX, cameraY, position, glyphSize,
 					color.RGBA{255, 255, 255, 255})
 				drawGlyph(renderer, atlas, cameraX, cameraY, r, position,

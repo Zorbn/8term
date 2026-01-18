@@ -123,14 +123,19 @@ func newEmulator() emulator {
 	}
 }
 
-func (e *emulator) xyToIndex(x, y int) int {
+func (e *emulator) getAbsoluteY(y int) int {
 	totalRows := len(e.grid.runes) / emulatorCols
-	return (totalRows-emulatorRows+y)*emulatorCols + x
+	return totalRows - emulatorRows + y
+}
+
+func (e *emulator) xyToIndex(x, y int) int {
+	absY := e.getAbsoluteY(y)
+	return absY*emulatorCols + x
 }
 
 func (e *emulator) updateUsedHeight() {
-	totalRows := len(e.grid.runes) / emulatorCols
-	e.grid.usedHeight = max(e.grid.usedHeight, totalRows-emulatorRows+e.cursorY+1)
+	absY := e.getAbsoluteY(e.cursorY)
+	e.grid.usedHeight = max(e.grid.usedHeight, absY+1)
 }
 
 func (e *emulator) writeRune(r rune) {
@@ -185,7 +190,7 @@ func (e *emulator) reverseNewlineCursor() {
 	e.cursorY--
 
 	if e.cursorY < e.scrollTop && !e.isInAlternateBuffer {
-		e.scrollContentUp(e.scrollTop, e.scrollBottom)
+		e.scrollContentDown(e.scrollTop, e.scrollBottom)
 	}
 
 	e.cursorY = max(e.cursorY, e.scrollTop)
