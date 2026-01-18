@@ -37,6 +37,8 @@ func main() {
 	}
 	defer ttf.Quit()
 
+	sdl.SetHint(sdl.HINT_MAC_SCROLL_MOMENTUM, "1")
+
 	window, renderer, err := sdl.CreateWindowAndRenderer("8term", defaultWindowWidth, defaultWindowHeight, sdl.WINDOW_RESIZABLE|sdl.WINDOW_HIGH_PIXEL_DENSITY)
 	if err != nil {
 		panic(err)
@@ -67,10 +69,13 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 	paneBorderWidth := atlas.glyphWidth / 2
 
 	var cameraY float32 = 0
+	var cameraScrollOffset float32 = 0
+	var cameraScrollDistance float32 = 25
 	var cameraSpeed float32 = 10
 	cameraMargin := atlas.glyphHeight * 3
 
 	var panes []*pane
+	var paneYs []float32
 	command := newCommand()
 	focusedPaneIndex := 0
 
@@ -91,6 +96,17 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		errorFlashTimer -= dt
 		didResize := false
 
+		sdlWindowWidth, sdlWindowHeight, err := renderer.RenderOutputSize()
+
+		if err != nil {
+			panic(err)
+		}
+
+		windowWidth := float32(sdlWindowWidth)
+		windowHeight := float32(sdlWindowHeight)
+
+		getPaneYs(&paneYs, panes, atlas)
+
 		var event sdl.Event
 		for sdl.PollEvent(&event) {
 			switch event.Type {
@@ -105,27 +121,34 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 					}
 				} else {
 					pane := panes[focusedPaneIndex]
+
 					for _, r := range textEvent.Text {
 						writeRuneToPty(&pane.pty, r)
 					}
 				}
+
+				cameraScrollOffset = 0
 			case sdl.EVENT_KEY_DOWN:
 				keyEvent := event.KeyboardEvent()
+				lastFocusedPaneIndex := focusedPaneIndex
+
 				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &errorFlashTimer)
+
+				if focusedPaneIndex != lastFocusedPaneIndex {
+					cameraScrollOffset = 0
+				}
+			case sdl.EVENT_MOUSE_WHEEL:
+				wheelEvent := event.MouseWheelEvent()
+				cameraScrollOffset -= wheelEvent.Y * cameraScrollDistance
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
 			}
 		}
 
-		var paneY float32 = 0
 		for i := len(panes) - 1; i >= 0; i-- {
 			pane := panes[i]
 			isRunning := pane.handleOutput()
 			pane.timer += dt
-
-			if i < focusedPaneIndex {
-				paneY += getPaneHeight(pane, atlas)
-			}
 
 			if pane.emulator.grid.usedHeight > 0 {
 				continue
@@ -142,19 +165,20 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 			}
 		}
 
-		sdlWindowWidth, sdlWindowHeight, err := renderer.RenderOutputSize()
-		if err != nil {
-			panic(err)
-		}
-		windowWidth := float32(sdlWindowWidth)
-		windowHeight := float32(sdlWindowHeight)
+		getPaneYs(&paneYs, panes, atlas)
 
 		var targetY float32
+
 		if focusedPaneIndex < len(panes) {
-			targetY = paneY - (windowHeight-float32(panes[focusedPaneIndex].emulator.grid.usedHeight)*atlas.glyphHeight)/2
+			targetY = paneYs[focusedPaneIndex] - (windowHeight-float32(panes[focusedPaneIndex].emulator.grid.usedHeight)*atlas.glyphHeight)/2
 		} else {
-			targetY = paneY - windowHeight + atlas.glyphHeight + cameraMargin
+			targetY = paneYs[len(panes)] - windowHeight + atlas.glyphHeight + cameraMargin
 		}
+
+		baseTargetY := targetY
+		targetY += cameraScrollOffset
+		targetY = min(max(targetY, -cameraMargin), paneYs[len(panes)]+atlas.glyphHeight+cameraMargin-windowHeight)
+		cameraScrollOffset = targetY - baseTargetY
 
 		if didResize || cameraY == 0 {
 			cameraY = targetY
@@ -162,14 +186,29 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 			cameraY = lerp(cameraY, targetY, dt*cameraSpeed)
 		}
 
-		draw(renderer, atlas, panes, focusedPaneIndex, cameraY, windowWidth, windowHeight, dpi, time,
+		draw(renderer, atlas, panes, paneYs, focusedPaneIndex, cameraY, windowWidth, windowHeight, dpi, time,
 			errorFlashTimer, &command, paneBorderWidth, glyphSize)
 
 		renderer.Present()
 	}
 }
 
-func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneIndex int, cameraY, windowWidth, windowHeight, dpi, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
+func getPaneYs(paneYs *[]float32, panes []*pane, atlas *GlyphAtlas) {
+	*paneYs = (*paneYs)[:0]
+
+	var paneY float32 = 0
+
+	for _, pane := range panes {
+		*paneYs = append(*paneYs, paneY)
+		paneY += getPaneHeight(pane, atlas)
+	}
+
+	*paneYs = append(*paneYs, paneY)
+}
+
+func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []float32, focusedPaneIndex int,
+	cameraY, windowWidth, windowHeight, dpi, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
+
 	cameraX := (atlas.glyphWidth*float32(emulatorCols) - windowWidth) / 2
 
 	backgroundR := uint8(math.Sin(0.3*float64(time)+0)*10 + 10)
@@ -181,8 +220,6 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 
 	paneWidth := atlas.glyphWidth * float32(emulatorCols)
 
-	var paneY float32 = 0
-
 	for i, pane := range panes {
 		emulator := &pane.emulator
 
@@ -190,6 +227,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 			continue
 		}
 
+		paneY := paneYs[i]
 		paneHeight := atlas.glyphHeight * float32(emulator.grid.usedHeight)
 
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
@@ -199,11 +237,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 				Vector2{0, paneY}, Vector2{paneWidth, paneHeight},
 				borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 		}
-
-		paneY += getPaneHeight(pane, atlas)
 	}
-
-	paneY = 0
 
 	for paneIndex, pane := range panes {
 		emulator := &pane.emulator
@@ -212,6 +246,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 			continue
 		}
 
+		paneY := paneYs[paneIndex]
 		paneHeight := atlas.glyphHeight * float32(emulator.grid.usedHeight)
 
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
@@ -247,19 +282,21 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 					color.RGBA{0, 0, 0, 255})
 			}
 		}
-		paneY += getPaneHeight(pane, atlas)
 	}
+
+	var commandX float32
+	commandY := paneYs[len(panes)]
 
 	borderColor := getPaneBorderColor(len(panes), focusedPaneIndex, nil)
 	borderWidth := getPaneBorderWidth(len(panes), focusedPaneIndex, paneBorderWidth, time)
 	drawBorderedRect(renderer, atlas, cameraX, cameraY,
-		Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight},
+		Vector2{commandX, commandY}, Vector2{paneWidth, atlas.glyphHeight},
 		borderWidth, borderColor, color.RGBA{0, 0, 0, 255})
 
 	if errorFlashTimer > 0 {
 		errorColor := color.RGBA{255, 0, 0, uint8(errorFlashTimer * 255)}
 		drawRect(renderer, atlas, cameraX, cameraY,
-			Vector2{0, paneY}, Vector2{paneWidth, atlas.glyphHeight}, errorColor)
+			Vector2{commandX, commandY}, Vector2{paneWidth, atlas.glyphHeight}, errorColor)
 	}
 
 	cwd, err := os.Getwd()
@@ -267,20 +304,19 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 		cwd = "?"
 	}
 
-	var commandX float32
 	commandX += drawString(renderer, atlas, cameraX, cameraY, cwd,
-		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
+		Vector2{commandX, commandY}, color.RGBA{255, 255, 255, 255})
 
 	commandX += drawString(renderer, atlas, cameraX, cameraY, "> ",
-		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
+		Vector2{commandX, commandY}, color.RGBA{255, 255, 255, 255})
 
 	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes,
-		Vector2{commandX, paneY}, color.RGBA{255, 255, 255, 255})
+		Vector2{commandX, commandY}, color.RGBA{255, 255, 255, 255})
 
 	if window, err := renderer.Window(); err == nil {
 		window.SetTextInputArea(&sdl.Rect{
 			X: int32((commandX - cameraX) / dpi),
-			Y: int32((paneY - cameraY) / dpi),
+			Y: int32((commandY - cameraY) / dpi),
 			W: int32((paneWidth - commandX) / dpi),
 			H: int32(atlas.glyphHeight / dpi),
 		}, 0)
@@ -293,12 +329,12 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, focusedPaneI
 	if len(missingTrailingRunes) > 0 {
 		drawText(renderer, atlas, cameraX, cameraY,
 			missingTrailingRunes,
-			Vector2{commandX, paneY},
+			Vector2{commandX, commandY},
 			color.RGBA{255, 255, 255, 255})
 	}
 
 	if len(panes) == focusedPaneIndex {
-		position := Vector2{commandX, paneY}
+		position := Vector2{commandX, commandY}
 		drawRect(renderer, atlas, cameraX, cameraY, position, glyphSize,
 			color.RGBA{255, 255, 255, 255})
 

@@ -123,6 +123,16 @@ func newEmulator() emulator {
 	}
 }
 
+func (e *emulator) xyToIndex(x, y int) int {
+	totalRows := len(e.grid.runes) / emulatorCols
+	return (totalRows-emulatorRows+y)*emulatorCols + x
+}
+
+func (e *emulator) updateUsedHeight() {
+	totalRows := len(e.grid.runes) / emulatorCols
+	e.grid.usedHeight = max(e.grid.usedHeight, totalRows-emulatorRows+e.cursorY+1)
+}
+
 func (e *emulator) writeRune(r rune) {
 	if e.cursorX >= emulatorCols {
 		e.cursorX = 0
@@ -131,17 +141,15 @@ func (e *emulator) writeRune(r rune) {
 
 	e.setRuneAt(r, e.cursorX, e.cursorY)
 	e.cursorX++
-	e.grid.usedHeight = max(e.grid.usedHeight, e.cursorY+1)
+	e.updateUsedHeight()
 }
 
 func (e *emulator) setRuneAt(r rune, x int, y int) {
-	index := y*emulatorCols + x
-
+	index := e.xyToIndex(x, y)
 	e.setRune(r, index)
 }
 
 func (e *emulator) setRune(r rune, index int) {
-
 	e.grid.runes[index] = r
 
 	foregroundColor, backgroundColor := e.foregroundColor, e.backgroundColor
@@ -159,11 +167,15 @@ func (e *emulator) setRune(r rune, index int) {
 }
 
 func (e *emulator) newlineCursor() {
-	e.grid.usedHeight = max(e.grid.usedHeight, e.cursorY+1)
+	e.updateUsedHeight()
 	e.cursorY++
 
 	if e.cursorY > e.scrollBottom && !e.isInAlternateBuffer {
-		e.scrollContentUp(e.scrollTop, e.scrollBottom)
+		for range emulatorCols {
+			e.grid.runes = append(e.grid.runes, ' ')
+			e.grid.foregroundColors = append(e.grid.foregroundColors, Foreground)
+			e.grid.backgroundColors = append(e.grid.backgroundColors, Background)
+		}
 	}
 
 	e.cursorY = min(e.cursorY, e.scrollBottom)
@@ -182,9 +194,9 @@ func (e *emulator) reverseNewlineCursor() {
 func (e *emulator) scrollContentUp(top, bottom int) {
 	bottom = max(bottom, top+1)
 
-	dst := top * emulatorCols
+	dst := e.xyToIndex(0, top)
 	srcStart := dst + emulatorCols
-	srcEnd := (bottom + 1) * emulatorCols
+	srcEnd := e.xyToIndex(0, bottom+1)
 
 	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
 	copy(e.grid.foregroundColors[dst:], e.grid.foregroundColors[srcStart:srcEnd])
@@ -196,8 +208,8 @@ func (e *emulator) scrollContentUp(top, bottom int) {
 func (e *emulator) scrollContentDown(top, bottom int) {
 	bottom = max(bottom, top+1)
 
-	srcStart := top * emulatorCols
-	srcEnd := bottom * emulatorCols
+	srcStart := e.xyToIndex(0, top)
+	srcEnd := e.xyToIndex(0, bottom)
 	dst := srcStart + emulatorCols
 
 	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
@@ -209,7 +221,7 @@ func (e *emulator) scrollContentDown(top, bottom int) {
 
 func (e *emulator) clearScrolledOutRow(y int) {
 	for x := range emulatorCols {
-		i := y*emulatorCols + x
+		i := e.xyToIndex(x, y)
 
 		e.grid.runes[i] = ' '
 		e.grid.foregroundColors[i] = Foreground
@@ -336,9 +348,9 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 			e.setRuneAt(' ', x, e.cursorY)
 		}
 	case 'J':
-		startIndex := 0
-		endIndex := emulatorRows * emulatorCols
-		cursorIndex := e.cursorY*emulatorCols + e.cursorX
+		endIndex := len(e.grid.runes)
+		startIndex := endIndex - emulatorRows*emulatorCols
+		cursorIndex := e.xyToIndex(e.cursorX, e.cursorY)
 
 		switch getParam(params, 0, 0) {
 		case 0:
