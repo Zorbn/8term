@@ -107,6 +107,8 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 
 		getPaneYs(&paneYs, panes, atlas)
 
+		lastFocusedPaneIndex := focusedPaneIndex
+
 		var event sdl.Event
 		for sdl.PollEvent(&event) {
 			switch event.Type {
@@ -130,13 +132,8 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 				cameraScrollOffset = 0
 			case sdl.EVENT_KEY_DOWN:
 				keyEvent := event.KeyboardEvent()
-				lastFocusedPaneIndex := focusedPaneIndex
 
 				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &errorFlashTimer)
-
-				if focusedPaneIndex != lastFocusedPaneIndex {
-					cameraScrollOffset = 0
-				}
 			case sdl.EVENT_MOUSE_WHEEL:
 				wheelEvent := event.MouseWheelEvent()
 				cameraScrollOffset -= wheelEvent.Y * cameraScrollDistance
@@ -154,6 +151,10 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
 			}
+		}
+
+		if focusedPaneIndex != lastFocusedPaneIndex {
+			cameraScrollOffset = 0
 		}
 
 		for i := len(panes) - 1; i >= 0; i-- {
