@@ -6,6 +6,7 @@ import (
 
 type astNode interface {
 	exec(pane *pane) int
+	analyze(command *command)
 }
 
 type callNode struct {
