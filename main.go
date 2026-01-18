@@ -140,6 +140,17 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 			case sdl.EVENT_MOUSE_WHEEL:
 				wheelEvent := event.MouseWheelEvent()
 				cameraScrollOffset -= wheelEvent.Y * cameraScrollDistance
+			case sdl.EVENT_MOUSE_BUTTON_DOWN:
+				buttonEvent := event.MouseButtonEvent()
+				mouseY := (buttonEvent.Y * dpi) + cameraY
+
+				if buttonEvent.Button == uint8(sdl.BUTTON_LEFT) {
+					focusedPaneIndex = 0
+
+					for focusedPaneIndex < len(panes) && mouseY > paneYs[focusedPaneIndex+1] {
+						focusedPaneIndex++
+					}
+				}
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
 			}
