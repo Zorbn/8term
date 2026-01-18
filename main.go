@@ -264,8 +264,12 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 		paneHeight := atlas.glyphHeight * float32(emulator.grid.usedHeight)
 
 		if isPaneVisible(paneY, paneHeight, cameraY, windowHeight) {
-			for y := range emulator.grid.usedHeight {
+			minVisibleY := max(int((cameraY-paneY)/atlas.glyphHeight), 0)
+			maxVisibleY := min(minVisibleY+int(windowHeight/atlas.glyphHeight), emulator.grid.usedHeight-1)
+
+			for y := minVisibleY; y <= maxVisibleY; y++ {
 				lineY := atlas.glyphHeight*float32(y) + paneY
+
 				for x := range emulatorCols {
 					i := y*emulatorCols + x
 					r := emulator.grid.runes[i]
