@@ -181,7 +181,10 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		var targetY float32
 
 		if focusedPaneIndex < len(panes) {
-			targetY = paneYs[focusedPaneIndex] - (windowHeight-float32(panes[focusedPaneIndex].emulator.grid.usedHeight)*atlas.glyphHeight)/2
+			usedHeight := panes[focusedPaneIndex].emulator.grid.usedHeight
+			focusedHeight := min(panes[focusedPaneIndex].emulator.grid.usedHeight, emulatorRows)
+
+			targetY = paneYs[focusedPaneIndex] - windowHeight/2 + (float32(usedHeight)-float32(focusedHeight)/2)*atlas.glyphHeight
 		} else {
 			targetY = paneYs[len(panes)] - windowHeight + atlas.glyphHeight + cameraMargin
 		}
