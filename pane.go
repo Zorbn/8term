@@ -12,20 +12,22 @@ import (
 const bufferLen = 1024
 
 type pane struct {
-	pty      pty
-	buffer   []byte
-	output   chan []byte
-	parser   *vte.Parser
-	emulator emulator
-	exitCode int
-	timer    float32
+	rows, cols int
+	pty        pty
+	buffer     []byte
+	output     chan []byte
+	parser     *vte.Parser
+	emulator   emulator
+	exitCode   int
+	timer      float32
 }
 
-func newPane() pane {
+func newPane(rows, cols int) pane {
 	buffer := make([]byte, bufferLen)
 	output := make(chan []byte)
 
 	return pane{
+		rows, cols,
 		pty{},
 		buffer,
 		output,
@@ -47,7 +49,7 @@ func (p *pane) run(ast astNode) error {
 
 func (p *pane) runToExit(cmd *exec.Cmd) error {
 	var err error
-	p.pty, err = newPty(cmd)
+	p.pty, err = newPty(cmd, p.rows, p.cols)
 
 	if err != nil {
 		return err
@@ -86,7 +88,7 @@ loop:
 			}
 
 			if p.parser == nil {
-				p.emulator = newEmulator()
+				p.emulator = newEmulator(p.rows, p.cols)
 				p.parser = vte.NewParser(&p.emulator)
 			}
 
@@ -107,4 +109,14 @@ loop:
 	}
 
 	return true
+}
+
+func (p *pane) Resize(cols int) {
+	p.cols = cols
+
+	if p.parser != nil {
+		p.emulator.Resize(cols)
+	}
+
+	p.pty.Resize(p.rows, cols)
 }

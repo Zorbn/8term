@@ -67,15 +67,15 @@ type grid struct {
 	usedHeight       int
 }
 
-func newGrid() grid {
-	runes := make([]rune, emulatorRows*emulatorCols)
+func newGrid(rows, cols int) grid {
+	runes := make([]rune, rows*cols)
 
 	for i := range len(runes) {
 		runes[i] = ' '
 	}
 
-	foregroundColors := make([]uint32, emulatorRows*emulatorCols)
-	backgroundColors := make([]uint32, emulatorRows*emulatorCols)
+	foregroundColors := make([]uint32, rows*cols)
+	backgroundColors := make([]uint32, rows*cols)
 
 	return grid{
 		runes,
@@ -85,10 +85,8 @@ func newGrid() grid {
 	}
 }
 
-const emulatorRows int = 24
-const emulatorCols int = 80
-
 type emulator struct {
+	rows, cols                        int
 	grid                              grid
 	otherGrid                         grid
 	isInAlternateBuffer               bool
@@ -99,19 +97,20 @@ type emulator struct {
 	input                             bytes.Buffer
 }
 
-func newEmulator() emulator {
-	grid := newGrid()
-	otherGrid := newGrid()
+func newEmulator(rows, cols int) emulator {
+	grid := newGrid(rows, cols)
+	otherGrid := newGrid(rows, cols)
 
 	isInAlternateBuffer := false
 	cursorX, cursorY := 0, 0
-	scrollTop, scrollBottom := 0, emulatorRows-1
+	scrollTop, scrollBottom := 0, rows-1
 	foregroundColor, backgroundColor := Foreground, Background
 	areColorsBright, areColorsSwapped := false, false
 
 	var input bytes.Buffer
 
 	return emulator{
+		rows, cols,
 		grid,
 		otherGrid,
 		isInAlternateBuffer,
@@ -124,13 +123,13 @@ func newEmulator() emulator {
 }
 
 func (e *emulator) getAbsoluteY(y int) int {
-	totalRows := len(e.grid.runes) / emulatorCols
-	return totalRows - emulatorRows + y
+	totalRows := len(e.grid.runes) / e.cols
+	return totalRows - e.rows + y
 }
 
 func (e *emulator) xyToIndex(x, y int) int {
 	absY := e.getAbsoluteY(y)
-	return absY*emulatorCols + x
+	return absY*e.cols + x
 }
 
 func (e *emulator) updateUsedHeight() {
@@ -139,7 +138,7 @@ func (e *emulator) updateUsedHeight() {
 }
 
 func (e *emulator) writeRune(r rune) {
-	if e.cursorX >= emulatorCols {
+	if e.cursorX >= e.cols {
 		e.cursorX = 0
 		e.newlineCursor()
 	}
@@ -176,7 +175,7 @@ func (e *emulator) newlineCursor() {
 	e.cursorY++
 
 	if e.cursorY > e.scrollBottom && !e.isInAlternateBuffer {
-		for range emulatorCols {
+		for range e.cols {
 			e.grid.runes = append(e.grid.runes, ' ')
 			e.grid.foregroundColors = append(e.grid.foregroundColors, Foreground)
 			e.grid.backgroundColors = append(e.grid.backgroundColors, Background)
@@ -200,7 +199,7 @@ func (e *emulator) scrollContentUp(top, bottom int) {
 	bottom = max(bottom, top+1)
 
 	dst := e.xyToIndex(0, top)
-	srcStart := dst + emulatorCols
+	srcStart := dst + e.cols
 	srcEnd := e.xyToIndex(0, bottom+1)
 
 	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
@@ -215,7 +214,7 @@ func (e *emulator) scrollContentDown(top, bottom int) {
 
 	srcStart := e.xyToIndex(0, top)
 	srcEnd := e.xyToIndex(0, bottom)
-	dst := srcStart + emulatorCols
+	dst := srcStart + e.cols
 
 	copy(e.grid.runes[dst:], e.grid.runes[srcStart:srcEnd])
 	copy(e.grid.foregroundColors[dst:], e.grid.foregroundColors[srcStart:srcEnd])
@@ -225,7 +224,7 @@ func (e *emulator) scrollContentDown(top, bottom int) {
 }
 
 func (e *emulator) clearScrolledOutRow(y int) {
-	for x := range emulatorCols {
+	for x := range e.cols {
 		i := e.xyToIndex(x, y)
 
 		e.grid.runes[i] = ' '
@@ -319,28 +318,28 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 			}
 		}
 	case 'r':
-		e.scrollTop = getRowsParam(params, 0, 1)
-		e.scrollBottom = getRowsParam(params, 1, math.MaxInt)
+		e.scrollTop = e.getRowsParam(params, 0, 1)
+		e.scrollBottom = e.getRowsParam(params, 1, math.MaxInt)
 	case 'A':
 		e.cursorY = max(e.cursorY-getParam(params, 0, 1), 0)
 	case 'B':
-		e.cursorY = min(e.cursorY+getParam(params, 0, 1), emulatorRows-1)
+		e.cursorY = min(e.cursorY+getParam(params, 0, 1), e.rows-1)
 	case 'C':
-		e.cursorX = min(e.cursorX+getParam(params, 0, 1), emulatorCols-1)
+		e.cursorX = min(e.cursorX+getParam(params, 0, 1), e.cols-1)
 	case 'D':
 		e.cursorX = max(e.cursorX-getParam(params, 0, 1), 0)
 	case 'E':
-		e.cursorY = min(e.cursorY+getParam(params, 0, 1), emulatorRows-1)
+		e.cursorY = min(e.cursorY+getParam(params, 0, 1), e.rows-1)
 		e.cursorX = 0
 	case 'F':
 		e.cursorY = max(e.cursorY-getParam(params, 0, 1), 0)
 		e.cursorX = 0
 	case 'H':
-		e.cursorY = getRowsParam(params, 0, 1)
-		e.cursorX = getColsParam(params, 1, 1)
+		e.cursorY = e.getRowsParam(params, 0, 1)
+		e.cursorX = e.getColsParam(params, 1, 1)
 	case 'K':
 		startX := 0
-		endX := emulatorCols
+		endX := e.cols
 
 		switch getParam(params, 0, 0) {
 		case 0:
@@ -354,7 +353,7 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		}
 	case 'J':
 		endIndex := len(e.grid.runes)
-		startIndex := endIndex - emulatorRows*emulatorCols
+		startIndex := endIndex - e.rows*e.cols
 		cursorIndex := e.xyToIndex(e.cursorX, e.cursorY)
 
 		switch getParam(params, 0, 0) {
@@ -372,7 +371,7 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		}
 	case 'X':
 		startX := e.cursorX
-		endX := min(e.cursorX+getParam(params, 0, 1), emulatorCols)
+		endX := min(e.cursorX+getParam(params, 0, 1), e.cols)
 
 		for x := startX; x < endX; x++ {
 			e.setRuneAt(' ', x, e.cursorY)
@@ -422,16 +421,16 @@ func (e *emulator) SosPmApcDispatch(kind vte.SosPmApcKind, data []byte, bellTerm
 	}
 }
 
-func getRowsParam(params [][]uint16, index int, def int) int {
+func (e *emulator) getRowsParam(params [][]uint16, index int, def int) int {
 	rawValue := getParam(params, index, def)
 
-	return min(max(rawValue, 1), emulatorRows) - 1
+	return min(max(rawValue, 1), e.rows) - 1
 }
 
-func getColsParam(params [][]uint16, index int, def int) int {
+func (e *emulator) getColsParam(params [][]uint16, index int, def int) int {
 	rawValue := getParam(params, index, def)
 
-	return min(max(rawValue, 1), emulatorCols) - 1
+	return min(max(rawValue, 1), e.cols) - 1
 }
 
 func getParam(params [][]uint16, index int, def int) int {
@@ -602,4 +601,37 @@ func brightenTerminalColor(color uint32) uint32 {
 	default:
 		return color
 	}
+}
+
+func (e *emulator) Resize(cols int) {
+	if cols == e.cols {
+		return
+	}
+
+	resizeGrid := func(g grid) grid {
+		totalRows := len(g.runes) / e.cols
+		newGrid := newGrid(totalRows, cols)
+
+		// Since we want to preserve lines, we take min(oldCols, newCols) for each row
+		copyCols := min(e.cols, cols)
+
+		for y := range totalRows {
+			srcStart := y * e.cols
+			dstStart := y * cols
+
+			copy(newGrid.runes[dstStart:dstStart+copyCols], g.runes[srcStart:srcStart+copyCols])
+			copy(newGrid.foregroundColors[dstStart:dstStart+copyCols], g.foregroundColors[srcStart:srcStart+copyCols])
+			copy(newGrid.backgroundColors[dstStart:dstStart+copyCols], g.backgroundColors[srcStart:srcStart+copyCols])
+		}
+
+		newGrid.usedHeight = g.usedHeight
+		return newGrid
+	}
+
+	e.grid = resizeGrid(e.grid)
+	e.otherGrid = resizeGrid(e.otherGrid)
+	e.cols = cols
+
+	e.cursorX = min(e.cursorX, e.cols-1)
+	e.cursorY = min(e.cursorY, e.rows-1)
 }

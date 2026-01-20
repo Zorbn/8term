@@ -82,7 +82,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 	os.Setenv("TERM", "xterm-256color")
 	os.Setenv("COLORTERM", "truecolor")
 
-	windowWidth, windowHeight := getWindowSize(renderer)
+	windowWidth, windowHeight, emulatorCols, emulatorRows := getWindowSize(renderer, atlas)
 
 	var errorFlashTimer float32
 
@@ -127,7 +127,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 			case sdl.EVENT_KEY_DOWN:
 				keyEvent := event.KeyboardEvent()
 
-				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &errorFlashTimer)
+				handleKeyPress(keyEvent.Key, &focusedPaneIndex, &panes, &command, &errorFlashTimer, emulatorRows, emulatorCols)
 			case sdl.EVENT_MOUSE_WHEEL:
 				wheelEvent := event.MouseWheelEvent()
 				cameraScrollOffset -= wheelEvent.Y * cameraScrollDistance
@@ -144,7 +144,11 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 				}
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
-				windowWidth, windowHeight = getWindowSize(renderer)
+				windowWidth, windowHeight, emulatorCols, emulatorRows = getWindowSize(renderer, atlas)
+
+				for _, pane := range panes {
+					pane.Resize(emulatorCols)
+				}
 			}
 		}
 
@@ -197,20 +201,26 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		}
 
 		draw(renderer, atlas, panes, paneYs, focusedPaneIndex, cameraY, windowWidth, windowHeight, dpi, time,
-			errorFlashTimer, &command, paneBorderWidth, glyphSize)
+			errorFlashTimer, &command, paneBorderWidth, glyphSize, emulatorCols)
 
 		renderer.Present()
 	}
 }
 
-func getWindowSize(renderer *sdl.Renderer) (float32, float32) {
+func getWindowSize(renderer *sdl.Renderer, atlas *GlyphAtlas) (float32, float32, int, int) {
 	sdlWindowWidth, sdlWindowHeight, err := renderer.RenderOutputSize()
 
 	if err != nil {
 		panic(err)
 	}
 
-	return float32(sdlWindowWidth), float32(sdlWindowHeight)
+	windowWidth := float32(sdlWindowWidth)
+	windowHeight := float32(sdlWindowHeight)
+
+	emulatorCols := max(int(windowWidth/atlas.glyphWidth)-2, 80)
+	emulatorRows := max(int(windowHeight/atlas.glyphHeight)-2, 24)
+
+	return windowWidth, windowHeight, emulatorCols, emulatorRows
 }
 
 func getPaneYs(paneYs *[]float32, panes []*pane, atlas *GlyphAtlas) {
@@ -227,7 +237,7 @@ func getPaneYs(paneYs *[]float32, panes []*pane, atlas *GlyphAtlas) {
 }
 
 func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []float32, focusedPaneIndex int,
-	cameraY, windowWidth, windowHeight, dpi, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2) {
+	cameraY, windowWidth, windowHeight, dpi, time, errorFlashTimer float32, command *command, paneBorderWidth float32, glyphSize Vector2, emulatorCols int) {
 
 	cameraX := (atlas.glyphWidth*float32(emulatorCols) - windowWidth) / 2
 

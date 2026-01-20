@@ -7,7 +7,7 @@ import (
 	"github.com/Zyko0/go-sdl3/sdl"
 )
 
-func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, command *command, errorFlashTimer *float32) {
+func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, command *command, errorFlashTimer *float32, rows, cols int) {
 	modState := sdl.GetModState()
 	isCmdPressed := (modState & sdl.KMOD_GUI) != 0
 	isCtrlPressed := (modState & sdl.KMOD_CTRL) != 0
@@ -38,7 +38,7 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 		case sdl.K_DOWN:
 			command.historyDown()
 		case sdl.K_RETURN:
-			if runCommand(command, panes, focusedPaneIndex) {
+			if runCommand(command, panes, focusedPaneIndex, rows, cols) {
 				command.addToHistory()
 				command.clear()
 			} else {
@@ -102,14 +102,14 @@ func swapPanes(panes []*pane, focusedPaneIndex int, startPaneIndex int) {
 	}
 }
 
-func runCommand(command *command, panes *[]*pane, focusedPaneIndex *int) bool {
+func runCommand(command *command, panes *[]*pane, focusedPaneIndex *int, rows, cols int) bool {
 	ast, didSucceed := command.parse()
 
 	if !didSucceed {
 		return false
 	}
 
-	pane := newPane()
+	pane := newPane(rows, cols)
 	pane.run(ast)
 
 	*panes = append(*panes, &pane)
