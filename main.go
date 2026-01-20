@@ -82,6 +82,8 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 	os.Setenv("TERM", "xterm-256color")
 	os.Setenv("COLORTERM", "truecolor")
 
+	windowWidth, windowHeight := getWindowSize(renderer)
+
 	var errorFlashTimer float32
 
 	lastTime := sdl.Ticks()
@@ -96,18 +98,10 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		errorFlashTimer -= dt
 		didResize := false
 
-		sdlWindowWidth, sdlWindowHeight, err := renderer.RenderOutputSize()
-
-		if err != nil {
-			panic(err)
-		}
-
-		windowWidth := float32(sdlWindowWidth)
-		windowHeight := float32(sdlWindowHeight)
-
 		getPaneYs(&paneYs, panes, atlas)
 
 		lastFocusedPaneIndex := focusedPaneIndex
+		lastPanesLen := len(panes)
 
 		var event sdl.Event
 		for sdl.PollEvent(&event) {
@@ -150,10 +144,11 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 				}
 			case sdl.EVENT_WINDOW_RESIZED:
 				didResize = true
+				windowWidth, windowHeight = getWindowSize(renderer)
 			}
 		}
 
-		if focusedPaneIndex != lastFocusedPaneIndex {
+		if focusedPaneIndex != lastFocusedPaneIndex || len(panes) != lastPanesLen {
 			cameraScrollOffset = 0
 		}
 
@@ -206,6 +201,16 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 
 		renderer.Present()
 	}
+}
+
+func getWindowSize(renderer *sdl.Renderer) (float32, float32) {
+	sdlWindowWidth, sdlWindowHeight, err := renderer.RenderOutputSize()
+
+	if err != nil {
+		panic(err)
+	}
+
+	return float32(sdlWindowWidth), float32(sdlWindowHeight)
 }
 
 func getPaneYs(paneYs *[]float32, panes []*pane, atlas *GlyphAtlas) {
