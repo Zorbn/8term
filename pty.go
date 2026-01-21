@@ -35,12 +35,14 @@ func (p *pty) Resize(rows, cols int) error {
 	})
 }
 
-func (p *pty) write(input []byte) {
+func (p *pty) write(input []byte) error {
 	if p.tty == nil {
-		return
+		return nil
 	}
 
-	p.tty.Write(input)
+	_, err := p.tty.Write(input)
+
+	return err
 }
 
 func (p *pty) read(output []byte) (int, error) {

@@ -98,6 +98,14 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		errorFlashTimer -= dt
 		didResize := false
 
+		// {
+		// 	fps := 1 / dt
+
+		// 	if fps < 100 {
+		// 		fmt.Println(fps)
+		// 	}
+		// }
+
 		getPaneYs(&paneYs, panes, atlas)
 
 		lastFocusedPaneIndex := focusedPaneIndex
@@ -147,7 +155,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 				windowWidth, windowHeight, emulatorCols, emulatorRows = getWindowSize(renderer, atlas)
 
 				for _, pane := range panes {
-					pane.Resize(emulatorCols)
+					pane.Resize(emulatorRows, emulatorCols)
 				}
 			}
 		}

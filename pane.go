@@ -10,6 +10,7 @@ import (
 )
 
 const bufferLen = 1024
+const bufferCount = 8
 
 type pane struct {
 	rows, cols int
@@ -24,7 +25,7 @@ type pane struct {
 
 func newPane(rows, cols int) pane {
 	buffer := make([]byte, bufferLen)
-	output := make(chan []byte)
+	output := make(chan []byte, bufferCount)
 
 	return pane{
 		rows, cols,
@@ -102,7 +103,7 @@ loop:
 		}
 	}
 
-	if didAdvance {
+	if didAdvance && p.emulator.input.Len() > 0 {
 		input := p.emulator.input.Bytes()
 		p.emulator.input.Reset()
 		p.pty.write(input)
@@ -111,12 +112,13 @@ loop:
 	return true
 }
 
-func (p *pane) Resize(cols int) {
+func (p *pane) Resize(rows, cols int) {
+	p.rows = rows
 	p.cols = cols
 
 	if p.parser != nil {
-		p.emulator.Resize(cols)
+		p.emulator.Resize(rows, cols)
 	}
 
-	p.pty.Resize(p.rows, cols)
+	p.pty.Resize(rows, cols)
 }

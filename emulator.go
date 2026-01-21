@@ -282,41 +282,98 @@ func (e *emulator) Hook(params [][]uint16, intermediates []byte, ignore bool, r 
 }
 
 func (e *emulator) OscDispatch(params [][]byte, bellTerminated bool) {
+	wantsForeground := hasStringParam(params, 0, "10")
+	wantsBackground := hasStringParam(params, 0, "11")
+
+	if hasStringParam(params, 1, "?") && (wantsForeground || wantsBackground) {
+
+		terminalColor := e.foregroundColor
+
+		if wantsBackground {
+			terminalColor = e.backgroundColor
+		}
+
+		color := terminalColorToColor(terminalColor)
+
+		fmt.Fprintf(&e.input, "\x1b]%s;rgb:%02x%02x%02x\x07", params[0], color.R, color.G, color.B)
+		return
+	}
+
 	if isDebug {
 		fmt.Printf("[OscDispatch] params=%v, bellTerminated=%v\n", params, bellTerminated)
 	}
 }
 
 func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore bool, r rune) {
+	if len(intermediates) > 0 {
+		switch intermediates[0] {
+		case '?':
+			switch r {
+			case 'l':
+				for i := range params {
+					param := getParam(params, i, 0)
+
+					switch param {
+					case 1047, 1049:
+						if e.isInAlternateBuffer {
+							e.isInAlternateBuffer = false
+							e.grid, e.otherGrid = e.otherGrid, e.grid
+						}
+					}
+				}
+			case 'h':
+				for i := range params {
+					param := getParam(params, i, 0)
+
+					switch param {
+					case 1047, 1049:
+						if !e.isInAlternateBuffer {
+							e.isInAlternateBuffer = true
+							e.grid, e.otherGrid = e.otherGrid, e.grid
+						}
+					}
+				}
+			case 'm':
+				for _, param := range params {
+					if len(param) == 0 {
+						continue
+					}
+
+					defaultResponse := 0
+
+					switch param[0] {
+					case 0:
+						defaultResponse = 0
+					case 1:
+						defaultResponse = 2
+					case 2:
+						defaultResponse = 2
+					case 4:
+						defaultResponse = 0
+					}
+
+					fmt.Fprintf(&e.input, "\x1b[>%vm", defaultResponse)
+				}
+			}
+		case '>':
+			switch r {
+			case 'c':
+				e.input.WriteString("\x1b[>41;0;0c")
+			}
+		}
+
+		return
+	}
+
 	switch r {
 	case 'c':
 		e.input.WriteString("\x1b[?1;0c")
+	case 'n':
+		if getParam(params, 0, 0) == 6 {
+			fmt.Fprintf(&e.input, "\x1b[%v;%vR", e.cursorY+1, e.cursorX+1)
+		}
 	case 'm':
 		e.parseFormatting(params)
-	case 'l':
-		for i := range params {
-			param := getParam(params, i, 0)
-
-			switch param {
-			case 1047, 1049:
-				if e.isInAlternateBuffer {
-					e.isInAlternateBuffer = false
-					e.grid, e.otherGrid = e.otherGrid, e.grid
-				}
-			}
-		}
-	case 'h':
-		for i := range params {
-			param := getParam(params, i, 0)
-
-			switch param {
-			case 1047, 1049:
-				if !e.isInAlternateBuffer {
-					e.isInAlternateBuffer = true
-					e.grid, e.otherGrid = e.otherGrid, e.grid
-				}
-			}
-		}
 	case 'r':
 		e.scrollTop = e.getRowsParam(params, 0, 1)
 		e.scrollBottom = e.getRowsParam(params, 1, math.MaxInt)
@@ -439,6 +496,20 @@ func getParam(params [][]uint16, index int, def int) int {
 	}
 
 	return int(params[index][0])
+}
+
+func hasStringParam(params [][]byte, index int, value string) bool {
+	if index >= len(params) || len(params[index]) != len(value) {
+		return false
+	}
+
+	for i := range len(value) {
+		if params[index][i] != value[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (e *emulator) parseFormatting(params [][]uint16) {
@@ -603,33 +674,44 @@ func brightenTerminalColor(color uint32) uint32 {
 	}
 }
 
-func (e *emulator) Resize(cols int) {
-	if cols == e.cols {
+func (e *emulator) Resize(rows, cols int) {
+	if rows == e.rows && cols == e.cols {
 		return
 	}
 
 	resizeGrid := func(g grid) grid {
-		totalRows := len(g.runes) / e.cols
+		totalRows := max(len(g.runes)/e.cols, rows)
 		newGrid := newGrid(totalRows, cols)
 
 		// Since we want to preserve lines, we take min(oldCols, newCols) for each row
 		copyCols := min(e.cols, cols)
 
-		for y := range totalRows {
+		oldTotalRows := len(g.runes) / e.cols
+		offset := totalRows - oldTotalRows
+
+		for y := range oldTotalRows {
 			srcStart := y * e.cols
-			dstStart := y * cols
+			dstStart := (y + offset) * cols
 
 			copy(newGrid.runes[dstStart:dstStart+copyCols], g.runes[srcStart:srcStart+copyCols])
 			copy(newGrid.foregroundColors[dstStart:dstStart+copyCols], g.foregroundColors[srcStart:srcStart+copyCols])
 			copy(newGrid.backgroundColors[dstStart:dstStart+copyCols], g.backgroundColors[srcStart:srcStart+copyCols])
 		}
 
-		newGrid.usedHeight = g.usedHeight
+		if g.usedHeight > 0 {
+			newGrid.usedHeight = g.usedHeight + offset
+		}
 		return newGrid
 	}
 
 	e.grid = resizeGrid(e.grid)
 	e.otherGrid = resizeGrid(e.otherGrid)
+
+	if e.scrollBottom == e.rows-1 {
+		e.scrollBottom = rows - 1
+	}
+
+	e.rows = rows
 	e.cols = cols
 
 	e.cursorX = min(e.cursorX, e.cols-1)
