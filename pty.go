@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"syscall"
 
 	cpty "github.com/creack/pty"
 )
@@ -12,7 +13,7 @@ type pty struct {
 }
 
 func newPty(cmd *exec.Cmd, rows, cols int) (pty, error) {
-	tty, err := cpty.StartWithSize(cmd, &cpty.Winsize{
+	tty, err := start(cmd, &cpty.Winsize{
 		Rows: uint16(rows),
 		Cols: uint16(cols),
 	})
@@ -47,4 +48,43 @@ func (p *pty) write(input []byte) error {
 
 func (p *pty) read(output []byte) (int, error) {
 	return p.tty.Read(output)
+}
+
+// A copy of creack/pty StartWithAttrs but with Ctty and ExtraFiles set up to allow stdin piping.
+func start(c *exec.Cmd, sz *cpty.Winsize) (*os.File, error) {
+	pty, tty, err := cpty.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tty.Close() }() // Best effort.
+
+	if sz != nil {
+		if err := cpty.Setsize(pty, sz); err != nil {
+			_ = pty.Close() // Best effort.
+			return nil, err
+		}
+	}
+	if c.Stdout == nil {
+		c.Stdout = tty
+	}
+	if c.Stderr == nil {
+		c.Stderr = tty
+	}
+	if c.Stdin == nil {
+		c.Stdin = tty
+	}
+
+	c.ExtraFiles = []*os.File{tty}
+
+	c.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    3,
+	}
+
+	if err := c.Start(); err != nil {
+		_ = pty.Close() // Best effort.
+		return nil, err
+	}
+	return pty, err
 }
