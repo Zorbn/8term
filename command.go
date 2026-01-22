@@ -139,14 +139,14 @@ func (c *command) updateCompletion() {
 
 	call := c.parser.lastCallNode
 
-	if call == nil || len(call.children) == 0 {
+	if call == nil || len(call.children) == 0 || c.runes[len(c.runes)-1] == ' ' {
 		return
 	}
 
 	path := call.children[len(call.children)-1]
 	match, isDir := completeFilePath(path)
 
-	if len(call.children) == 1 && c.runes[len(c.runes)-1] != ' ' {
+	if len(call.children) == 1 {
 		prefix := call.children[0]
 		executableMatch := c.completeExecutable(prefix)
 

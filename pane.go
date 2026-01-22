@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 
 	"github.com/danielgatis/go-vte"
@@ -48,7 +49,7 @@ func (p *pane) run(ast astNode) error {
 	return nil
 }
 
-func (p *pane) runToExit(cmd *exec.Cmd) error {
+func (p *pane) runToExit(cmd *exec.Cmd, input *os.File) error {
 	var err error
 	p.pty, err = newPty(cmd, p.rows, p.cols)
 

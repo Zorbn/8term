@@ -101,17 +101,18 @@ func runCall(call *callNode, pane *pane, input *os.File, output *os.File) proces
 
 	cmd := exec.Command(name, args...)
 
+	var err error
+
 	if input != nil {
 		cmd.Stdin = input
 	}
 
-	var err error
-
 	if output != nil {
 		cmd.Stdout = output
+
 		err = cmd.Start()
 	} else {
-		err = pane.runToExit(cmd)
+		err = pane.runToExit(cmd, input)
 	}
 
 	if err != nil {
