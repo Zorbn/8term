@@ -12,10 +12,10 @@ type pty struct {
 }
 
 func newPty(cmd *exec.Cmd, rows, cols int) (pty, error) {
-	tty, err := cpty.StartWithAttrs(cmd, &cpty.Winsize{
+	tty, err := cpty.StartWithSize(cmd, &cpty.Winsize{
 		Rows: uint16(rows),
 		Cols: uint16(cols),
-	}, nil)
+	})
 
 	if err != nil {
 		return pty{}, err
