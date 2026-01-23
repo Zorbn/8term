@@ -10,6 +10,8 @@ import (
 type command struct {
 	runes []rune
 
+	cursorIndex int
+
 	tokenizer tokenizer
 	parser    parser
 	isDirty   bool
@@ -28,22 +30,25 @@ func newCommand() command {
 	historicalUsages := make(map[string]int)
 
 	return command{
+		cursorIndex:      0,
 		pathExecutables:  pathExecutables,
 		historicalUsages: historicalUsages,
 	}
 }
 
-func (c *command) append(r rune) {
-	c.runes = append(c.runes, r)
+func (c *command) insert(r rune) {
+	c.runes = slices.Insert(c.runes, c.cursorIndex, r)
+	c.cursorIndex++
 	c.isDirty = true
 }
 
 func (c *command) pop() {
-	if len(c.runes) == 0 {
+	if len(c.runes) == 0 || c.cursorIndex == 0 {
 		return
 	}
 
-	c.runes = c.runes[:len(c.runes)-1]
+	c.runes = slices.Delete(c.runes, c.cursorIndex-1, c.cursorIndex)
+	c.cursorIndex--
 	c.isDirty = true
 }
 
@@ -53,7 +58,26 @@ func (c *command) clear() {
 	}
 
 	c.runes = c.runes[:0]
+	c.cursorIndex = 0
 	c.isDirty = true
+}
+
+func (c *command) moveCursorLeft() {
+	if c.cursorIndex <= 0 {
+		return
+	}
+
+	c.cursorIndex--
+	c.updateCompletion()
+}
+
+func (c *command) moveCursorRight() {
+	if c.cursorIndex >= len(c.runes) {
+		return
+	}
+
+	c.cursorIndex++
+	c.updateCompletion()
 }
 
 func (c *command) addToHistory() {
@@ -78,6 +102,7 @@ func (c *command) addToHistory() {
 	}
 
 	c.historyIndex = len(c.history)
+	c.cursorIndex = 0
 	c.pendingRunes = nil
 }
 
@@ -105,6 +130,7 @@ func (c *command) historyDown() {
 	if c.historyIndex == len(c.history) {
 		c.runes = make([]rune, len(c.pendingRunes))
 		copy(c.runes, c.pendingRunes)
+		c.cursorIndex = len(c.runes)
 
 		c.isDirty = true
 	} else {
@@ -117,6 +143,7 @@ func (c *command) loadHistory(index int) {
 
 	c.runes = make([]rune, len(item))
 	copy(c.runes, item)
+	c.cursorIndex = len(c.runes)
 
 	c.isDirty = true
 }
@@ -137,9 +164,13 @@ func (c *command) updateCompletion() {
 	c.parse()
 	c.completion = c.completion[:0]
 
+	if c.cursorIndex == 0 || c.cursorIndex < len(c.runes) || c.runes[c.cursorIndex-1] == ' ' {
+		return
+	}
+
 	call := c.parser.lastCallNode
 
-	if call == nil || len(call.children) == 0 || c.runes[len(c.runes)-1] == ' ' {
+	if call == nil || len(call.children) == 0 {
 		return
 	}
 
@@ -231,7 +262,7 @@ func isBetterMatch(oldMatch, newMatch string) bool {
 
 func (c *command) applyCompletion() {
 	for _, r := range c.completion {
-		c.append(r)
+		c.insert(r)
 	}
 
 	c.completion = c.completion[:0]

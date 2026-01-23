@@ -37,6 +37,10 @@ func handleKeyPress(key sdl.Keycode, focusedPaneIndex *int, panes *[]*pane, comm
 			command.historyUp()
 		case sdl.K_DOWN:
 			command.historyDown()
+		case sdl.K_LEFT:
+			command.moveCursorLeft()
+		case sdl.K_RIGHT:
+			command.moveCursorRight()
 		case sdl.K_RETURN:
 			if runCommand(command, panes, focusedPaneIndex, rows, cols) {
 				command.addToHistory()

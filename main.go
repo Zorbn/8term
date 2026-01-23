@@ -121,7 +121,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 
 				if focusedPaneIndex >= len(panes) {
 					for _, r := range textEvent.Text {
-						command.append(r)
+						command.insert(r)
 					}
 				} else {
 					pane := panes[focusedPaneIndex]
@@ -357,14 +357,19 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 	commandX += drawString(renderer, atlas, cameraX, cameraY, "> ",
 		Vector2{commandX, commandY}, color.RGBA{255, 255, 255, 255})
 
-	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes,
+	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes[:command.cursorIndex],
+		Vector2{commandX, commandY}, color.RGBA{255, 255, 255, 255})
+
+	cursorX := commandX
+
+	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes[command.cursorIndex:],
 		Vector2{commandX, commandY}, color.RGBA{255, 255, 255, 255})
 
 	if window, err := renderer.Window(); err == nil {
 		window.SetTextInputArea(&sdl.Rect{
-			X: int32((commandX - cameraX) / dpi),
+			X: int32((cursorX - cameraX) / dpi),
 			Y: int32((commandY - cameraY) / dpi),
-			W: int32((paneWidth - commandX) / dpi),
+			W: int32((paneWidth - cursorX) / dpi),
 			H: int32(atlas.glyphHeight / dpi),
 		}, 0)
 	}
@@ -381,11 +386,15 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 	}
 
 	if len(panes) == focusedPaneIndex {
-		position := Vector2{commandX, commandY}
+		position := Vector2{cursorX, commandY}
 		drawRect(renderer, atlas, cameraX, cameraY, position, glyphSize,
 			color.RGBA{255, 255, 255, 255})
 
-		if len(missingTrailingRunes) > 0 {
+		if command.cursorIndex < len(command.runes) {
+			drawGlyph(renderer, atlas, cameraX, cameraY,
+				command.runes[command.cursorIndex], position,
+				color.RGBA{0, 0, 0, 255})
+		} else if len(missingTrailingRunes) > 0 {
 			drawGlyph(renderer, atlas, cameraX, cameraY,
 				missingTrailingRunes[0], position,
 				color.RGBA{0, 0, 0, 255})
