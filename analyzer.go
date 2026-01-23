@@ -1,7 +1,7 @@
 package main
 
 func (c *callNode) analyze(command *command) {
-	name := c.children[0]
+	name := c.children[0].text
 	command.historicalUsages[name]++
 }
 

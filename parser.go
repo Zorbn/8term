@@ -7,37 +7,53 @@ import (
 type astNode interface {
 	exec(pane *pane) int
 	analyze(command *command)
+	find(index int) astNode
+	Start() int
+	End() int
 }
 
 type callNode struct {
-	children []string
+	children []token
+	start    int
+	end      int
 }
+
+func (c *callNode) Start() int { return c.start }
+func (c *callNode) End() int   { return c.end }
 
 type binaryNode struct {
 	op    string
 	left  astNode
 	right astNode
+	start int
+	end   int
 }
+
+func (b *binaryNode) Start() int { return b.start }
+func (b *binaryNode) End() int   { return b.end }
 
 type pipeNode struct {
 	children []*callNode
+	start    int
+	end      int
 }
+
+func (p *pipeNode) Start() int { return p.start }
+func (p *pipeNode) End() int   { return p.end }
 
 type parser struct {
-	pos                  int
-	missingTrailingRunes []rune
-	errors               []error
-	ast                  astNode
-	lastCallNode         *callNode
+	pos          int
+	errors       []error
+	ast          astNode
+	lastCallNode *callNode
 }
 
-func (p *parser) parse(tokens []token) {
+func (p *parser) parse(tokens []token, missingTrailingRunes []rune) {
 	p.pos = 0
-	p.missingTrailingRunes = p.missingTrailingRunes[:0]
 	p.errors = p.errors[:0]
 	p.lastCallNode = nil
 
-	ast := p.parseSequence(tokens)
+	ast := p.parseSequence(tokens, missingTrailingRunes)
 
 	if p.pos < len(tokens) {
 		p.error("Unexpected token: " + string(p.peek(tokens).text))
@@ -52,7 +68,7 @@ func (p *parser) error(text string) {
 
 func (p *parser) peek(tokens []token) token {
 	if p.pos >= len(tokens) {
-		return newToken("", tokenKindEof)
+		return newToken("", tokenKindEof, 0, 0)
 	}
 
 	return tokens[p.pos]
@@ -69,7 +85,8 @@ func (p *parser) consume(tokens []token) token {
 }
 
 func (p *parser) match(text string, kind tokenKind, tokens []token) bool {
-	if p.peek(tokens) == newToken(text, kind) {
+	t := p.peek(tokens)
+	if t.text == text && t.kind == kind {
 		p.consume(tokens)
 		return true
 	}
@@ -77,8 +94,8 @@ func (p *parser) match(text string, kind tokenKind, tokens []token) bool {
 	return false
 }
 
-func (p *parser) parseSequence(tokens []token) astNode {
-	left := p.parseLogic(tokens)
+func (p *parser) parseSequence(tokens []token, missingTrailingRunes []rune) astNode {
+	left := p.parseLogic(tokens, missingTrailingRunes)
 
 	for p.match(";", tokenKindSymbol, tokens) {
 
@@ -86,24 +103,24 @@ func (p *parser) parseSequence(tokens []token) astNode {
 			break
 		}
 
-		right := p.parseLogic(tokens)
-		left = &binaryNode{op: ";", left: left, right: right}
+		right := p.parseLogic(tokens, missingTrailingRunes)
+		left = &binaryNode{op: ";", left: left, right: right, start: left.Start(), end: right.End()}
 	}
 
 	return left
 }
 
-func (p *parser) parseLogic(tokens []token) astNode {
-	left := p.parseTerm(tokens)
+func (p *parser) parseLogic(tokens []token, missingTrailingRunes []rune) astNode {
+	left := p.parseTerm(tokens, missingTrailingRunes)
 
 	for {
 		op := p.peek(tokens)
 
 		if op.isSymbol("&&") || op.isSymbol("||") {
 			p.consume(tokens)
-			right := p.parseTerm(tokens)
+			right := p.parseTerm(tokens, missingTrailingRunes)
 
-			left = &binaryNode{op: op.text, left: left, right: right}
+			left = &binaryNode{op: op.text, left: left, right: right, start: left.Start(), end: right.End()}
 		} else {
 			break
 		}
@@ -112,12 +129,12 @@ func (p *parser) parseLogic(tokens []token) astNode {
 	return left
 }
 
-func (p *parser) parseTerm(tokens []token) astNode {
+func (p *parser) parseTerm(tokens []token, missingTrailingRunes []rune) astNode {
 	if p.match("(", tokenKindSymbol, tokens) {
-		node := p.parseSequence(tokens)
+		node := p.parseSequence(tokens, missingTrailingRunes)
 
 		if !p.match(")", tokenKindSymbol, tokens) {
-			p.missingTrailingRunes = append(p.missingTrailingRunes, ')')
+			missingTrailingRunes = append(missingTrailingRunes, ')')
 		}
 
 		return node
@@ -140,7 +157,7 @@ func (p *parser) parsePipe(tokens []token) astNode {
 		children = append(children, next)
 	}
 
-	return &pipeNode{children: children}
+	return &pipeNode{children: children, start: first.Start(), end: children[len(children)-1].End()}
 }
 
 func (p *parser) parseCall(tokens []token) *callNode {
@@ -156,7 +173,7 @@ func (p *parser) parseCallInner(tokens []token) *callNode {
 		return &callNode{}
 	}
 
-	var children []string
+	var children []token
 
 	for {
 		token := p.peek(tokens)
@@ -169,14 +186,21 @@ func (p *parser) parseCallInner(tokens []token) *callNode {
 			p.error("Expected string")
 		}
 
-		children = append(children, p.consume(tokens).text)
+		t := p.consume(tokens)
+		children = append(children, t)
 	}
 
-	if len(tokens) == 0 {
+	start := 0
+	end := 0
+
+	if len(children) == 0 {
 		p.error("Empty call")
+	} else {
+		start = children[0].start
+		end = children[len(children)-1].end
 	}
 
-	return &callNode{children}
+	return &callNode{children: children, start: start, end: end}
 }
 
 func isOperator(token token) bool {

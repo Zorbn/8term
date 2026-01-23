@@ -12,9 +12,10 @@ type command struct {
 
 	cursorIndex int
 
-	tokenizer tokenizer
-	parser    parser
-	isDirty   bool
+	tokenizer            tokenizer
+	parser               parser
+	missingTrailingRunes []rune
+	isDirty              bool
 
 	completion      []rune
 	pathExecutables []string
@@ -78,6 +79,22 @@ func (c *command) moveCursorRight() {
 
 	c.cursorIndex++
 	c.updateCompletion()
+}
+
+func (c *command) getCursorRune() rune {
+	if len(c.completion) > 0 {
+		return c.completion[0]
+	}
+
+	if c.cursorIndex < len(c.runes) {
+		return c.runes[c.cursorIndex]
+	}
+
+	if len(c.missingTrailingRunes) > 0 {
+		return c.missingTrailingRunes[0]
+	}
+
+	return ' '
 }
 
 func (c *command) addToHistory() {
@@ -152,8 +169,9 @@ func (c *command) parse() (astNode, bool) {
 	if c.isDirty {
 		c.isDirty = false
 
-		c.tokenizer.tokenize(c.runes)
-		c.parser.parse(c.tokenizer.tokens)
+		c.missingTrailingRunes = c.missingTrailingRunes[:0]
+		c.tokenizer.tokenize(c.runes, c.missingTrailingRunes)
+		c.parser.parse(c.tokenizer.tokens, c.missingTrailingRunes)
 		c.updateCompletion()
 	}
 
@@ -161,25 +179,36 @@ func (c *command) parse() (astNode, bool) {
 }
 
 func (c *command) updateCompletion() {
-	c.parse()
+	ast, _ := c.parse()
 	c.completion = c.completion[:0]
 
-	if c.cursorIndex == 0 || c.cursorIndex < len(c.runes) || c.runes[c.cursorIndex-1] == ' ' {
+	var token *token
+
+	for i := range c.tokenizer.tokens {
+		t := &c.tokenizer.tokens[i]
+
+		if c.cursorIndex == t.end {
+			token = t
+			break
+		}
+	}
+
+	if token == nil {
 		return
 	}
 
-	call := c.parser.lastCallNode
+	node := ast.find(c.cursorIndex)
+	needsExecutable := false
 
-	if call == nil || len(call.children) == 0 {
-		return
+	switch n := node.(type) {
+	case *callNode:
+		needsExecutable = len(n.children) == 0 || n.children[0] == *token
 	}
 
-	path := call.children[len(call.children)-1]
-	match, isDir := completeFilePath(path)
+	match, isDir := completeFilePath(token.text, needsExecutable)
 
-	if len(call.children) == 1 {
-		prefix := call.children[0]
-		executableMatch := c.completeExecutable(prefix)
+	if needsExecutable {
+		executableMatch := c.completeExecutable(token.text)
 
 		if isBetterMatch(match, executableMatch) {
 			match, isDir = executableMatch, false
@@ -199,10 +228,14 @@ func (c *command) updateCompletion() {
 	}
 }
 
-func completeFilePath(path string) (string, bool) {
+func completeFilePath(path string, needsExecutable bool) (string, bool) {
 	dir, file := filepath.Split(path)
 
 	if dir == "" {
+		if needsExecutable {
+			return "", false
+		}
+
 		dir = "."
 	}
 
@@ -217,6 +250,10 @@ func completeFilePath(path string) (string, bool) {
 
 	for _, entry := range entries {
 		name := entry.Name()
+
+		if needsExecutable && !isEntryExecutable(entry) {
+			continue
+		}
 
 		if isBetterMatch(match, name) && strings.HasPrefix(name, file) {
 			match = name
@@ -283,27 +320,32 @@ func getPathExecutables() []string {
 		}
 
 		for _, entry := range entries {
-
-			if entry.IsDir() {
+			if !isEntryExecutable(entry) {
 				continue
 			}
 
-			info, err := entry.Info()
+			name := entry.Name()
 
-			if err != nil {
-				continue
-			}
-
-			if info.Mode()&0111 != 0 {
-				name := entry.Name()
-
-				if !seen[name] {
-					executables = append(executables, name)
-					seen[name] = true
-				}
+			if !seen[name] {
+				executables = append(executables, name)
+				seen[name] = true
 			}
 		}
 	}
 
 	return executables
+}
+
+func isEntryExecutable(entry os.DirEntry) bool {
+	if entry.IsDir() {
+		return false
+	}
+
+	info, err := entry.Info()
+
+	if err != nil {
+		return false
+	}
+
+	return info.Mode()&0111 != 0
 }

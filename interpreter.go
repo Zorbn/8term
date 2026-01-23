@@ -92,8 +92,12 @@ func (p *pipeNode) exec(pane *pane) int {
 }
 
 func runCall(call *callNode, pane *pane, input *os.File, output *os.File) process {
-	name := call.children[0]
-	args := call.children[1:]
+	name := call.children[0].text
+	args := make([]string, 0, len(call.children[1:]))
+
+	for _, arg := range call.children[1:] {
+		args = append(args, arg.text)
+	}
 
 	if process, isBuiltin := tryRunBuiltin(name, args, pane, input, output); isBuiltin {
 		return process

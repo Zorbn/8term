@@ -112,6 +112,7 @@ func run(renderer *sdl.Renderer, atlas *GlyphAtlas, dpi float32) {
 		lastPanesLen := len(panes)
 
 		var event sdl.Event
+
 		for sdl.PollEvent(&event) {
 			switch event.Type {
 			case sdl.EVENT_QUIT:
@@ -346,6 +347,8 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 			Vector2{commandX, commandY}, Vector2{paneWidth, atlas.glyphHeight}, errorColor)
 	}
 
+	command.parse()
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "?"
@@ -362,6 +365,11 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 
 	cursorX := commandX
 
+	commandX += drawText(renderer, atlas, cameraX, cameraY,
+		command.completion,
+		Vector2{commandX, commandY},
+		color.RGBA{255, 255, 255, 255})
+
 	commandX += drawText(renderer, atlas, cameraX, cameraY, command.runes[command.cursorIndex:],
 		Vector2{commandX, commandY}, color.RGBA{255, 255, 255, 255})
 
@@ -374,30 +382,21 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 		}, 0)
 	}
 
-	command.parse()
-
-	missingTrailingRunes := slices.Concat(command.completion, command.tokenizer.missingTrailingRunes, command.parser.missingTrailingRunes)
-
-	if len(missingTrailingRunes) > 0 {
-		drawText(renderer, atlas, cameraX, cameraY,
-			missingTrailingRunes,
-			Vector2{commandX, commandY},
-			color.RGBA{255, 255, 255, 255})
-	}
+	drawText(renderer, atlas, cameraX, cameraY,
+		command.missingTrailingRunes,
+		Vector2{commandX, commandY},
+		color.RGBA{255, 255, 255, 255})
 
 	if len(panes) == focusedPaneIndex {
 		position := Vector2{cursorX, commandY}
+
 		drawRect(renderer, atlas, cameraX, cameraY, position, glyphSize,
 			color.RGBA{255, 255, 255, 255})
 
-		if command.cursorIndex < len(command.runes) {
-			drawGlyph(renderer, atlas, cameraX, cameraY,
-				command.runes[command.cursorIndex], position,
-				color.RGBA{0, 0, 0, 255})
-		} else if len(missingTrailingRunes) > 0 {
-			drawGlyph(renderer, atlas, cameraX, cameraY,
-				missingTrailingRunes[0], position,
-				color.RGBA{0, 0, 0, 255})
-		}
+		cursorRune := command.getCursorRune()
+
+		drawGlyph(renderer, atlas, cameraX, cameraY,
+			cursorRune, position,
+			color.RGBA{0, 0, 0, 255})
 	}
 }
