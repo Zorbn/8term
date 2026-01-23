@@ -251,6 +251,10 @@ func completeFilePath(path string, needsExecutable bool) (string, bool) {
 	for _, entry := range entries {
 		name := entry.Name()
 
+		if len(name) <= len(file) {
+			continue
+		}
+
 		if needsExecutable && !isEntryExecutable(entry) {
 			continue
 		}
@@ -261,7 +265,7 @@ func completeFilePath(path string, needsExecutable bool) (string, bool) {
 		}
 	}
 
-	if len(match) < len(file) {
+	if match == "" {
 		return "", false
 	}
 
@@ -272,7 +276,7 @@ func (c *command) completeExecutable(prefix string) string {
 	match := ""
 
 	for _, executable := range c.pathExecutables {
-		if !strings.HasPrefix(executable, prefix) {
+		if len(executable) <= len(prefix) || !strings.HasPrefix(executable, prefix) {
 			continue
 		}
 
@@ -286,7 +290,7 @@ func (c *command) completeExecutable(prefix string) string {
 		}
 	}
 
-	if len(match) < len(prefix) {
+	if match == "" {
 		return ""
 	}
 
