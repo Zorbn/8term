@@ -196,7 +196,7 @@ func (e *emulator) reverseNewlineCursor() {
 }
 
 func (e *emulator) scrollContentUp(top, bottom int) {
-	bottom = max(bottom, top+1)
+	bottom = min(max(bottom, top+1), e.rows-1)
 
 	dst := e.xyToIndex(0, top)
 	srcStart := dst + e.cols
@@ -210,7 +210,7 @@ func (e *emulator) scrollContentUp(top, bottom int) {
 }
 
 func (e *emulator) scrollContentDown(top, bottom int) {
-	bottom = max(bottom, top+1)
+	bottom = min(max(bottom, top+1), e.rows-1)
 
 	srcStart := e.xyToIndex(0, top)
 	srcEnd := e.xyToIndex(0, bottom)
@@ -248,7 +248,7 @@ func (e *emulator) Execute(b byte) {
 	case '\t':
 		nextTabStop := (e.cursorX/8 + 1) * 8
 
-		for e.cursorX < nextTabStop {
+		for range nextTabStop - e.cursorX {
 			e.writeRune(' ')
 		}
 	case '\a':
