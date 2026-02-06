@@ -91,6 +91,7 @@ type emulator struct {
 	otherGrid                         grid
 	isInAlternateBuffer               bool
 	cursorX, cursorY                  int
+	doShowCursor                      bool
 	scrollTop, scrollBottom           int
 	foregroundColor, backgroundColor  uint32
 	areColorsBright, areColorsSwapped bool
@@ -103,6 +104,7 @@ func newEmulator(rows, cols int) emulator {
 
 	isInAlternateBuffer := false
 	cursorX, cursorY := 0, 0
+	doShowCursor := true
 	scrollTop, scrollBottom := 0, rows-1
 	foregroundColor, backgroundColor := Foreground, Background
 	areColorsBright, areColorsSwapped := false, false
@@ -115,6 +117,7 @@ func newEmulator(rows, cols int) emulator {
 		otherGrid,
 		isInAlternateBuffer,
 		cursorX, cursorY,
+		doShowCursor,
 		scrollTop, scrollBottom,
 		foregroundColor, backgroundColor,
 		areColorsBright, areColorsSwapped,
@@ -314,6 +317,8 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 					param := getParam(params, i, 0)
 
 					switch param {
+					case 25:
+						e.doShowCursor = false
 					case 1047, 1049:
 						if e.isInAlternateBuffer {
 							e.isInAlternateBuffer = false
@@ -326,6 +331,8 @@ func (e *emulator) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 					param := getParam(params, i, 0)
 
 					switch param {
+					case 25:
+						e.doShowCursor = true
 					case 1047, 1049:
 						if !e.isInAlternateBuffer {
 							e.isInAlternateBuffer = true

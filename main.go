@@ -316,7 +316,7 @@ func draw(renderer *sdl.Renderer, atlas *GlyphAtlas, panes []*pane, paneYs []flo
 			cursorX := emulator.cursorX
 			cursorY := emulator.getAbsoluteY(emulator.cursorY)
 
-			if paneIndex == focusedPaneIndex && cursorY < emulator.grid.usedHeight {
+			if paneIndex == focusedPaneIndex && emulator.doShowCursor && cursorY < emulator.grid.usedHeight {
 				r := emulator.grid.runes[cursorY*emulatorCols+cursorX]
 
 				position := Vector2{
